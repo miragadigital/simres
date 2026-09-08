@@ -71,6 +71,22 @@ CREATE TABLE IF NOT EXISTS public.reasesmen_pm (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Pastikan semua kolom tersedia jika tabel reasesmen_pm sudah pernah dibuat sebelumnya
+ALTER TABLE IF EXISTS public.reasesmen_pm 
+    ADD COLUMN IF NOT EXISTS id TEXT,
+    ADD COLUMN IF NOT EXISTS id_pm TEXT,
+    ADD COLUMN IF NOT EXISTS nama_pm TEXT,
+    ADD COLUMN IF NOT EXISTS peksos TEXT,
+    ADD COLUMN IF NOT EXISTS tahap TEXT,
+    ADD COLUMN IF NOT EXISTS tgl_reasesmen DATE,
+    ADD COLUMN IF NOT EXISTS fisik TEXT,
+    ADD COLUMN IF NOT EXISTS psikologis TEXT,
+    ADD COLUMN IF NOT EXISTS sosial TEXT,
+    ADD COLUMN IF NOT EXISTS vokasional TEXT,
+    ADD COLUMN IF NOT EXISTS kesimpulan TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 -- Index Pencarian Re-asesmen per PM agar pemuatan cepat
 CREATE INDEX IF NOT EXISTS idx_reasesmen_id_pm ON public.reasesmen_pm(id_pm);
 

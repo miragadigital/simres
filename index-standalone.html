@@ -1411,57 +1411,91 @@
             const client = getSupabase();
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
+            const pmId = d.id_pm || d.id;
+            if (!pmId) throw new Error("ID PM tidak valid untuk penyimpanan re-asesmen.");
+
+            const namaPm = d.nama_pm || d.nama || '-';
+            const peksos = d.peksos || (currentUser && currentUser.name) || 'Pekerja Sosial';
+            const tahap = d.tahap || d.tahap_reasesmen || 'Re-Asesmen Berkala';
+            const tgl = d.tgl_reasesmen || (new Date().toISOString().split('T')[0]);
+            const fisik = d.fisik || d.perkembangan_fisik || '-';
+            const psi = d.psikologis || d.perkembangan_psikologis || '-';
+            const sos = d.sosial || d.perkembangan_sosial || '-';
+            const vok = d.vokasional || d.kemajuan_vokasional || '-';
+            const kes = d.kesimpulan || d.evaluasi_masalah || '-';
+
             const idReas = 'REAS-' + Date.now();
-            const nowIso = new Date().toISOString();
 
             const payload = {
-                id_reasesmen: idReas,
-                id_pm: d.id,
-                nama_pm: d.nama,
-                peksos: d.peksos || currentUser.name || 'Pekerja Sosial',
-                tgl_reasesmen: d.tgl_reasesmen || nowIso,
-                tahap_reasesmen: d.tahap_reasesmen || 'Re-Asesmen Berkala',
-                perkembangan_fisik: d.perkembangan_fisik || '-',
-                perkembangan_psikologis: d.perkembangan_psikologis || '-',
-                perkembangan_sosial: d.perkembangan_sosial || '-',
-                kemajuan_vokasional: d.kemajuan_vokasional || '-',
-                evaluasi_masalah: d.evaluasi_masalah || '-',
-                rekomendasi_lanjutan: d.rekomendasi_lanjutan || '-',
-                rencana_intervensi_baru: d.rencana_intervensi_baru || '-',
-                full_reasesmen_json: d
+                id: idReas,
+                id_pm: pmId,
+                nama_pm: namaPm,
+                peksos: peksos,
+                tahap: tahap,
+                tgl_reasesmen: tgl,
+                fisik: fisik,
+                psikologis: psi,
+                sosial: sos,
+                vokasional: vok,
+                kesimpulan: kes
             };
 
             const { error } = await client.from('reasesmen_pm').insert(payload);
             if (error) {
-                console.warn("Insert to reasesmen_pm warning:", error.message);
+                console.error("Insert to reasesmen_pm error:", error);
+                throw new Error("Gagal menyimpan ke tabel reasesmen_pm: " + (error.message || JSON.stringify(error)));
             }
 
             // Simpan juga ke linimasa jurnal layanan
             await dbSimpanJurnal({
-                id: d.id,
-                nama: d.nama,
+                id: pmId,
+                nama: namaPm,
                 role: 'Pekerja Sosial',
-                petugas: d.peksos || currentUser.name || 'Pekerja Sosial',
-                kondisi: `[RE-ASESMEN: ${d.tahap_reasesmen || 'Berkala'}] ${d.evaluasi_masalah || 'Evaluasi Perkembangan PM'}`,
-                intervensi: `Rekomendasi Lanjutan: ${d.rekomendasi_lanjutan || '-'}. Rencana Baru: ${d.rencana_intervensi_baru || '-'}`,
-                catatan: `Kemajuan Vokasional: ${d.kemajuan_vokasional || '-'}. Perkembangan: Fisik (${d.perkembangan_fisik || '-'}), Psikologis (${d.perkembangan_psikologis || '-'}), Sosial (${d.perkembangan_sosial || '-'})`
+                petugas: peksos,
+                kondisi: `[RE-ASESMEN: ${tahap}] Evaluasi Perkembangan PM`,
+                intervensi: `Kesimpulan & Rencana Tindak Lanjut: ${kes}`,
+                catatan: `Perkembangan Fisik: ${fisik} | Emosi/Psikologis: ${psi} | Interaksi Sosial: ${sos} | Kemajuan Vokasional: ${vok}`
             });
 
             return "OK";
         }
 
         async function dbGetReasesmenList(idPm) {
+            if (!idPm) return [];
             const client = getSupabase();
             if (!client) return [];
 
-            const { data, error } = await client
-                .from('reasesmen_pm')
-                .select('*')
-                .eq('id_pm', idPm)
-                .order('tgl_reasesmen', { ascending: false });
+            try {
+                const { data, error } = await client
+                    .from('reasesmen_pm')
+                    .select('*')
+                    .eq('id_pm', idPm)
+                    .order('tgl_reasesmen', { ascending: false });
 
-            if (error || !data) return [];
-            return data;
+                if (error) {
+                    console.error("dbGetReasesmenList error:", error);
+                    return [];
+                }
+                if (!data) return [];
+
+                return data.map(r => ({
+                    id: r.id || r.id_reasesmen || '',
+                    id_pm: r.id_pm || idPm,
+                    nama_pm: r.nama_pm || '',
+                    peksos: r.peksos || 'Pekerja Sosial',
+                    tahap: r.tahap || r.tahap_reasesmen || 'Re-Asesmen Berkala',
+                    tgl_reasesmen: r.tgl_reasesmen || (r.created_at ? r.created_at.split('T')[0] : ''),
+                    fisik: r.fisik || r.perkembangan_fisik || '-',
+                    psikologis: r.psikologis || r.perkembangan_psikologis || '-',
+                    sosial: r.sosial || r.perkembangan_sosial || '-',
+                    vokasional: r.vokasional || r.kemajuan_vokasional || '-',
+                    kesimpulan: r.kesimpulan || r.evaluasi_masalah || '-',
+                    created_at: r.created_at || ''
+                }));
+            } catch (err) {
+                console.error("dbGetReasesmenList exception:", err);
+                return [];
+            }
         }
 
         /**
@@ -1679,7 +1713,7 @@
                 'tgl_kontrak_mulai', 'tgl_kontrak_habis', 'surat_kontrak_url', 'updated_at'
             ]),
             master_vokasional: new Set(['id', 'nama_vokasional', 'kategori', 'instruktur', 'deskripsi', 'status', 'created_at']),
-            reasesmen_pm: new Set(['id_reasesmen', 'id_pm', 'nama_pm', 'peksos', 'tgl_reasesmen', 'tahap_reasesmen', 'perkembangan_fisik', 'perkembangan_psikologis', 'perkembangan_sosial', 'kemajuan_vokasional', 'evaluasi_masalah', 'rekomendasi_lanjutan', 'rencana_intervensi_baru', 'full_reasesmen_json', 'created_at']),
+            reasesmen_pm: new Set(['id', 'id_pm', 'nama_pm', 'peksos', 'tahap', 'tgl_reasesmen', 'fisik', 'psikologis', 'sosial', 'vokasional', 'kesimpulan', 'created_at', 'updated_at']),
             notifikasi_kesehatan: new Set(['id', 'timestamp', 'id_pm', 'nama_pm', 'kategori', 'tenaga_kesehatan', 'petugas', 'tgl_jadwal', 'detail', 'status', 'peksos', 'caregiver', 'catatan']),
             jurnal_layanan: new Set(['id_log', 'timestamp', 'id_pm', 'nama_pm', 'role', 'petugas', 'kondisi', 'intervensi', 'catatan']),
             arsip_alumni: new Set(['id_pm', 'nik', 'nama', 'tgl_masuk', 'tgl_masuk_pertama', 'tgl_terminasi', 'alasan_terminasi', 'layanan', 'kluster', 'ragam', 'pj_kasus', 'foto_url', 'ktp_url', 'bast_url', 'pernyataan_url', 'full_asesmen_json']),
@@ -1708,8 +1742,15 @@
             'berkas_kontrak': 'surat_kontrak_url',
             'nama_vokasional': 'nama_vokasional',
             'vokasi': 'vokasional',
-            'id_reasesmen': 'id_reasesmen',
-            'tahap_reasesmen': 'tahap_reasesmen',
+            'id_reasesmen': 'id',
+            'tahap_reasesmen': 'tahap',
+            'perkembangan_fisik': 'fisik',
+            'perkembangan_psikologis': 'psikologis',
+            'perkembangan_sosial': 'sosial',
+            'kemajuan_vokasional': 'vokasional',
+            'evaluasi_masalah': 'kesimpulan',
+            'rencana_intervensi_baru': 'kesimpulan',
+            'rekomendasi_lanjutan': 'kesimpulan',
 
             // Tanggal & Status
             'tgl_masuk': 'tgl_masuk',
@@ -2903,6 +2944,22 @@ CREATE TABLE IF NOT EXISTS public.reasesmen_pm (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Pastikan semua kolom tersedia jika tabel reasesmen_pm sudah pernah dibuat sebelumnya
+ALTER TABLE IF EXISTS public.reasesmen_pm 
+    ADD COLUMN IF NOT EXISTS id TEXT,
+    ADD COLUMN IF NOT EXISTS id_pm TEXT,
+    ADD COLUMN IF NOT EXISTS nama_pm TEXT,
+    ADD COLUMN IF NOT EXISTS peksos TEXT,
+    ADD COLUMN IF NOT EXISTS tahap TEXT,
+    ADD COLUMN IF NOT EXISTS tgl_reasesmen DATE,
+    ADD COLUMN IF NOT EXISTS fisik TEXT,
+    ADD COLUMN IF NOT EXISTS psikologis TEXT,
+    ADD COLUMN IF NOT EXISTS sosial TEXT,
+    ADD COLUMN IF NOT EXISTS vokasional TEXT,
+    ADD COLUMN IF NOT EXISTS kesimpulan TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- Index Pencarian Re-asesmen per PM
 CREATE INDEX IF NOT EXISTS idx_reasesmen_id_pm ON public.reasesmen_pm(id_pm);
@@ -5283,7 +5340,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         case 'alihkanPeksos': return await dbAlihkanPeksos(data);
                         case 'blastingPenyuluhan': return await dbBlastingPenyuluhan(data);
                         case 'simpanReasesmen': return await dbSimpanReasesmen(data);
-                        case 'getReasesmen': return await dbGetReasesmenList(data.id);
+                        case 'getReasesmen': return await dbGetReasesmenList(data.id || data.id_pm);
                         case 'getAllUsers': return await dbGetAllUsers();
                         case 'simpanUser': return await dbSimpanUser(data);
                         case 'deleteUser': return await dbDeleteUser(data.id, data.username);
@@ -6826,19 +6883,134 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         }
 
         // --- DETAIL COMPLETE & PRINT ---
+        let currentPMReasesmenList = [];
+
+        function getReasesmenSummaryHtml(list, pmId) {
+            if (!list || list.length === 0) {
+                return `
+                    <div class="p-4 bg-purple-50/40 rounded-xl border border-dashed border-purple-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                        <div class="flex items-center gap-2.5 text-purple-900">
+                            <span class="material-icons text-purple-400 text-xl">info</span>
+                            <div>
+                                <b class="font-bold">Belum Ada Riwayat Re-Asesmen Berkala</b>
+                                <p class="text-gray-500 mt-0.5">PM saat ini mengacu pada Asesmen Awal. Pekerja Sosial dapat menginput evaluasi berkala triwulan/semester.</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const latest = list[0];
+            return `
+                <div class="space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2 bg-white p-3 rounded-xl border border-purple-100 shadow-2xs">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-600 text-white shadow-xs">${latest.tahap || 'Re-Asesmen Berkala'}</span>
+                            <span class="text-xs font-bold text-purple-900">• ${formatDateStandard(latest.tgl_reasesmen)}</span>
+                        </div>
+                        <div class="text-xs text-gray-500 flex items-center gap-1">
+                            <span class="material-icons text-xs text-purple-600">person</span> Peksos: <b>${latest.peksos || '-'}</b>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+                        <div class="p-2.5 bg-white rounded-xl border border-purple-100">
+                            <b class="text-purple-950 block mb-0.5">1. Fisik & Kesehatan:</b>
+                            <span class="text-gray-600 line-clamp-2" title="${latest.fisik}">${latest.fisik || '-'}</span>
+                        </div>
+                        <div class="p-2.5 bg-white rounded-xl border border-purple-100">
+                            <b class="text-purple-950 block mb-0.5">2. Emosi & Psikologis:</b>
+                            <span class="text-gray-600 line-clamp-2" title="${latest.psikologis}">${latest.psikologis || '-'}</span>
+                        </div>
+                        <div class="p-2.5 bg-white rounded-xl border border-purple-100">
+                            <b class="text-purple-950 block mb-0.5">3. Relasi Sosial:</b>
+                            <span class="text-gray-600 line-clamp-2" title="${latest.sosial}">${latest.sosial || '-'}</span>
+                        </div>
+                        <div class="p-2.5 bg-white rounded-xl border border-purple-100">
+                            <b class="text-purple-950 block mb-0.5">4. Kemajuan Vokasi:</b>
+                            <span class="text-gray-600 line-clamp-2" title="${latest.vokasional}">${latest.vokasional || '-'}</span>
+                        </div>
+                    </div>
+                    <div class="p-3 bg-purple-100/60 rounded-xl border border-purple-200 text-xs">
+                        <b class="text-purple-950 block mb-1 flex items-center gap-1">
+                            <span class="material-icons text-sm text-purple-700">recommend</span> Kesimpulan & Rencana Tindak Lanjut:
+                        </b>
+                        <p class="text-purple-900 leading-relaxed font-medium">${latest.kesimpulan || '-'}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateReasesmenCardsHtml(list) {
+            if (!list || list.length === 0) {
+                return `
+                    <div class="p-8 bg-purple-50/50 rounded-2xl border border-dashed border-purple-200 text-center">
+                        <span class="material-icons text-4xl text-purple-400 mb-2">assignment_late</span>
+                        <h5 class="font-bold text-gray-800 text-sm">Belum Ada Riwayat Re-Asesmen Berkala</h5>
+                        <p class="text-xs text-gray-500 mt-1 max-w-md mx-auto">PM baru memiliki asesmen awal. Pekerja sosial dapat mengisi evaluasi triwulan/semester melalui tombol di atas.</p>
+                    </div>
+                `;
+            }
+
+            let html = '';
+            list.forEach((r, idx) => {
+                html += `
+                    <div class="p-5 bg-white rounded-2xl border border-purple-100 shadow-sm hover:shadow transition space-y-3">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-purple-100 pb-3">
+                            <div class="flex items-center gap-2">
+                                <span class="px-3 py-1 rounded-full text-xs font-black bg-purple-600 text-white shadow-xs">${r.tahap || 'Re-Asesmen Berkala'}</span>
+                                <span class="text-xs text-purple-900 font-bold">• ${formatDateStandard(r.tgl_reasesmen)}</span>
+                            </div>
+                            <span class="text-xs text-gray-500 flex items-center gap-1">
+                                <span class="material-icons text-sm text-purple-600">person</span> Peksos: <b>${r.peksos || '-'}</b>
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div class="p-2.5 bg-slate-50 rounded-xl border border-gray-100">
+                                <b class="text-gray-700 block mb-1">1. Fisik & Kesehatan:</b>
+                                <span class="text-gray-600">${r.fisik || '-'}</span>
+                            </div>
+                            <div class="p-2.5 bg-slate-50 rounded-xl border border-gray-100">
+                                <b class="text-gray-700 block mb-1">2. Emosi & Psikologis:</b>
+                                <span class="text-gray-600">${r.psikologis || '-'}</span>
+                            </div>
+                            <div class="p-2.5 bg-slate-50 rounded-xl border border-gray-100">
+                                <b class="text-gray-700 block mb-1">3. Interaksi Sosial:</b>
+                                <span class="text-gray-600">${r.sosial || '-'}</span>
+                            </div>
+                            <div class="p-2.5 bg-slate-50 rounded-xl border border-gray-100">
+                                <b class="text-gray-700 block mb-1">4. Vokasional & Keterampilan:</b>
+                                <span class="text-gray-600">${r.vokasional || '-'}</span>
+                            </div>
+                        </div>
+                        <div class="p-3 bg-purple-50/70 rounded-xl border border-purple-200 text-xs">
+                            <b class="text-purple-950 block mb-1 flex items-center gap-1">
+                                <span class="material-icons text-sm text-purple-700">recommend</span> Kesimpulan & Rencana Tindak Lanjut:
+                            </b>
+                            <p class="text-purple-900 leading-relaxed font-medium">${r.kesimpulan || '-'}</p>
+                        </div>
+                    </div>
+                `;
+            });
+            return html;
+        }
+
         async function showDetail(id) {
             showLoad(true);
             try {
                 let pm = allPM.find(p => p.id === id);
-                let as = await apiCall('getAsesmenDetail', { id });
-                let jr = [];
-                try { jr = await apiCall('getJurnal', { id }); } catch (e) { }
+                let [as, jr, reas] = await Promise.all([
+                    apiCall('getAsesmenDetail', { id }),
+                    apiCall('getJurnal', { id }).catch(() => []),
+                    apiCall('getReasesmen', { id }).catch(() => [])
+                ]);
+
+                currentPMReasesmenList = Array.isArray(reas) ? reas : [];
 
                 if (!pm) {
                     // Cek jika Alumni
                     const almDetail = await apiCall('getAlumniDetail', { id });
                     if (almDetail && almDetail.found) {
-                        renderDetailContent(almDetail, jr, true);
+                        renderDetailContent(almDetail, jr, currentPMReasesmenList, true);
                         nav('view-detail');
                         return;
                     }
@@ -6846,7 +7018,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 }
 
                 const fullObj = Object.assign({}, as, pm);
-                renderDetailContent(fullObj, jr, false);
+                renderDetailContent(fullObj, jr, currentPMReasesmenList, false);
                 nav('view-detail');
             } catch (e) { myAlert(e.message); } finally { showLoad(false); }
         }
@@ -6857,10 +7029,14 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 const detail = await apiCall('getAlumniDetail', { id });
                 if (!detail || !detail.found) return myAlert("Detail Alumni tidak ditemukan.");
 
-                let jr = [];
-                try { jr = await apiCall('getJurnal', { id }); } catch (e) { }
+                let [jr, reas] = await Promise.all([
+                    apiCall('getJurnal', { id }).catch(() => []),
+                    apiCall('getReasesmen', { id }).catch(() => [])
+                ]);
 
-                renderDetailContent(detail, jr, true);
+                currentPMReasesmenList = Array.isArray(reas) ? reas : [];
+
+                renderDetailContent(detail, jr, currentPMReasesmenList, true);
                 nav('view-detail');
             } catch (e) {
                 myAlert("Gagal memuat detail alumni: " + e.message);
@@ -6871,8 +7047,10 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         let currentDetailPMId = '';
 
-        function renderDetailContent(as, jr, isAlumni) {
+        function renderDetailContent(as, jr, reasList = [], isAlumni = false) {
             currentDetailPMId = as.id || '';
+            currentPMReasesmenList = Array.isArray(reasList) ? reasList : [];
+
             const urlFoto = as.fotoUrl || as.foto_url || '';
             const urlKTP = as.ktpUrl || as.ktp_url || '';
             const urlBAST = as.bastUrl || as.bast_url || '';
@@ -6937,7 +7115,10 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                     <div class="flex border-b mb-6 overflow-x-auto">
                         <button class="px-6 py-3 text-primary border-b-2 border-primary font-bold focus:outline-none whitespace-nowrap" id="btn-t1" onclick="swTab(1)">Ringkasan Asesmen</button>
                         <button class="px-6 py-3 text-gray-500 hover:text-primary focus:outline-none whitespace-nowrap" id="btn-t2" onclick="swTab(2)">Timeline Jurnal</button>
-                        <button class="px-6 py-3 text-gray-500 hover:text-primary focus:outline-none whitespace-nowrap" id="btn-t3" onclick="swTab(3)">Riwayat Re-Asesmen Berkala</button>
+                        <button class="px-6 py-3 text-gray-500 hover:text-primary focus:outline-none whitespace-nowrap flex items-center gap-1.5" id="btn-t3" onclick="swTab(3)">
+                            <span>Riwayat Re-Asesmen Berkala</span>
+                            <span id="badge-count-reasesmen" class="px-2 py-0.5 rounded-full text-xs font-black bg-purple-100 text-purple-800 ${currentPMReasesmenList.length ? '' : 'hidden'}">${currentPMReasesmenList.length}</span>
+                        </button>
                     </div>
 
                     <!-- TAB 1: ASESMEN AWAL -->
@@ -7026,6 +7207,32 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                                 <p class="text-sm text-gray-700"><b>Rekomendasi:</b> ${as.rek_psi || '-'}</p>
                             </div>
                         </div>
+
+                        <!-- RINGKASAN RE-ASESMEN BERKALA TERAKHIR DI TAB 1 -->
+                        <div class="mt-6 p-5 bg-gradient-to-r from-purple-50 via-white to-purple-50/50 rounded-2xl border border-purple-200 shadow-xs" id="detail-reasesmen-summary-box">
+                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-purple-100 pb-3 mb-3">
+                                <div class="flex items-center gap-2">
+                                    <span class="p-2 bg-purple-600 text-white rounded-xl material-icons text-sm shadow-xs">assignment_turned_in</span>
+                                    <div>
+                                        <h4 class="font-bold text-purple-950 text-sm">Status & Hasil Re-Asesmen Berkala Terakhir</h4>
+                                        <p class="text-xs text-purple-700">Evaluasi berkala perkembangan fisik, psikologis, sosial, dan vokasional PM oleh Pekerja Sosial.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    ${!isAlumni ? `
+                                    <button onclick="openModalReasesmen('${as.id}')" class="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow flex items-center gap-1 transition active:scale-95">
+                                        <span class="material-icons text-xs">add_task</span> + Re-Asesmen
+                                    </button>` : ''}
+                                    <button onclick="swTab(3)" class="bg-white hover:bg-purple-50 text-purple-800 border border-purple-200 font-bold px-3 py-1.5 rounded-xl text-xs transition flex items-center gap-1 shadow-2xs">
+                                        <span>Lihat Seluruh Riwayat (${currentPMReasesmenList.length})</span>
+                                        <span class="material-icons text-xs">arrow_forward</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="reasesmen-summary-content">
+                                ${getReasesmenSummaryHtml(currentPMReasesmenList, as.id)}
+                            </div>
+                        </div>
                     </div>
 
                     <!-- TAB 2: TIMELINE JURNAL -->
@@ -7067,7 +7274,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                             </button>` : ''}
                         </div>
                         <div id="reasesmen-detail-list" class="space-y-4">
-                            <div class="text-center py-8 text-gray-400 text-xs italic">Memuat riwayat re-asesmen...</div>
+                            ${generateReasesmenCardsHtml(currentPMReasesmenList)}
                         </div>
                     </div>
 
@@ -7095,13 +7302,100 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             }
         }
 
-        function printDetail(id) {
+        async function printDetail(id) {
+            // Pastikan data re-asesmen PM terkini sudah terisi
+            if (!currentPMReasesmenList || currentPMReasesmenList.length === 0) {
+                try {
+                    const reasData = await apiCall('getReasesmen', { id });
+                    if (Array.isArray(reasData)) currentPMReasesmenList = reasData;
+                } catch (e) {
+                    console.warn("Gagal pre-fetch reasesmen untuk print:", e);
+                }
+            }
+
             const content = document.getElementById('detail-content').cloneNode(true);
             const btns = content.querySelectorAll('button, a, .hidden'); btns.forEach(b => b.remove());
-            const tab1 = content.querySelector('#c-t1'); const tab2 = content.querySelector('#c-t2');
-            if (tab1) tab1.style.display = 'block';
+            const tab1 = content.querySelector('#c-t1');
+            const tab2 = content.querySelector('#c-t2');
+            const tab3 = content.querySelector('#c-t3');
+
+            if (tab1) {
+                tab1.style.display = 'block';
+                // Hapus box ringkasan re-asesmen di tab 1 agar print Asesmen Awal tetap rapi
+                const sumBox = tab1.querySelector('#detail-reasesmen-summary-box');
+                if (sumBox) sumBox.remove();
+            }
+
+            // Format Riwayat Re-Asesmen Berkala (Tab 3)
+            if (tab3) {
+                tab3.style.display = 'block';
+                tab3.style.marginTop = '24px';
+
+                let reasRows = '';
+                let reasCounter = 1;
+                const reasList = (currentPMReasesmenList && currentPMReasesmenList.length > 0) ? currentPMReasesmenList : [];
+
+                if (reasList.length > 0) {
+                    reasList.forEach(r => {
+                        const tgl = formatDateStandard(r.tgl_reasesmen || r.tgl || '');
+                        const tahap = r.tahap || r.tahap_reasesmen || 'Re-Asesmen Berkala';
+                        const peksos = r.peksos || '-';
+                        const fisik = r.fisik || r.perkembangan_fisik || '-';
+                        const psi = r.psikologis || r.perkembangan_psikologis || '-';
+                        const sos = r.sosial || r.perkembangan_sosial || '-';
+                        const vok = r.vokasional || r.kemajuan_vokasional || '-';
+                        const kes = r.kesimpulan || r.evaluasi_masalah || '-';
+
+                        reasRows += `
+                            <tr class="border-b">
+                                <td class="p-2 border text-center align-top font-bold">${reasCounter++}</td>
+                                <td class="p-2 border align-top whitespace-nowrap">
+                                    <div class="font-bold text-gray-900">${tahap}</div>
+                                    <div class="text-xs text-gray-600 font-mono">${tgl}</div>
+                                    <div class="text-xs text-gray-500 mt-1">Peksos: <b>${peksos}</b></div>
+                                </td>
+                                <td class="p-2 border text-xs align-top space-y-1">
+                                    <div><b>1. Fisik & Kesehatan:</b> ${fisik}</div>
+                                    <div><b>2. Emosi & Psikologis:</b> ${psi}</div>
+                                    <div><b>3. Relasi Sosial:</b> ${sos}</div>
+                                    <div><b>4. Kemajuan Vokasional:</b> ${vok}</div>
+                                </td>
+                                <td class="p-2 border text-xs align-top leading-relaxed">
+                                    <div class="font-semibold text-gray-900">${kes}</div>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                }
+
+                tab3.innerHTML = `
+                    <h3 class="text-lg font-bold text-gray-800 mt-8 mb-4 border-b-2 border-gray-800 pb-2 uppercase">
+                        Riwayat Evaluasi & Re-Asesmen Berkala (Pekerja Sosial)
+                    </h3>
+                    <table class="w-full border-collapse border border-gray-300 text-sm mb-6">
+                        <thead>
+                            <tr class="bg-gray-100 text-left">
+                                <th class="border p-2 w-10 text-center">No</th>
+                                <th class="border p-2 w-48">Tahap & Waktu</th>
+                                <th class="border p-2 w-2/5">Evaluasi Perkembangan 4 Aspek</th>
+                                <th class="border p-2">Kesimpulan & Rencana Tindak Lanjut</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${reasRows || '<tr><td colspan="4" class="p-4 text-center italic text-gray-500">Belum ada riwayat re-asesmen berkala (perkembangan masih mengacu pada hasil asesmen awal).</td></tr>'}
+                        </tbody>
+                    </table>
+                `;
+
+                // Posisikan Riwayat Re-Asesmen di atas Timeline Jurnal Pelayanan
+                if (tab2 && tab2.parentNode) {
+                    tab2.parentNode.insertBefore(tab3, tab2);
+                }
+            }
+
             if (tab2) {
-                tab2.style.display = 'block'; tab2.style.marginTop = '20px';
+                tab2.style.display = 'block';
+                tab2.style.marginTop = '20px';
                 const timelineContainer = tab2.querySelector('.relative');
                 if (timelineContainer) {
                     let rows = ''; let counter = 1;
@@ -7117,10 +7411,11 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
                         rows += `<tr class="border-b"><td class="p-2 border text-center align-top">${counter++}</td><td class="p-2 border text-center whitespace-nowrap align-top">${time}</td><td class="p-2 border align-top"><div class="font-bold">${petugas}</div><div class="text-xs text-gray-500">${role}</div></td><td class="p-2 border text-sm align-top"><div>${textHTML}</div></td></tr>`;
                     });
-                    const tableHTML = `<h3 class="text-lg font-bold text-gray-800 mt-8 mb-4 border-b-2 border-gray-800 pb-2 uppercase">Riwayat Pelayanan & Perkembangan</h3><table class="w-full border-collapse border border-gray-300 text-sm"><thead><tr class="bg-gray-100"><th class="border p-2 w-10">No</th><th class="border p-2 w-32">Waktu</th><th class="border p-2 w-48">Petugas</th><th class="border p-2">Uraian Perkembangan</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="p-4 text-center italic">Belum ada data jurnal.</td></tr>'}</tbody></table>`;
+                    const tableHTML = `<h3 class="text-lg font-bold text-gray-800 mt-8 mb-4 border-b-2 border-gray-800 pb-2 uppercase">Riwayat Pelayanan & Perkembangan (Jurnal)</h3><table class="w-full border-collapse border border-gray-300 text-sm"><thead><tr class="bg-gray-100"><th class="border p-2 w-10">No</th><th class="border p-2 w-32">Waktu</th><th class="border p-2 w-48">Petugas</th><th class="border p-2">Uraian Perkembangan</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="p-4 text-center italic">Belum ada data jurnal.</td></tr>'}</tbody></table>`;
                     tab2.innerHTML = tableHTML;
                 }
             }
+
             const headerDiv = content.querySelector('.bg-dark'); if (headerDiv) headerDiv.remove();
             const tabNav = content.querySelector('.flex.border-b'); if (tabNav) tabNav.remove();
 
@@ -8191,6 +8486,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             const vok = el('reasesmen-vokasional').value.trim();
             const kes = el('reasesmen-kesimpulan').value.trim();
 
+            if (!id) return myAlert("ID PM tidak ditemukan!");
             if (!tgl) return myAlert("Tanggal Re-Asesmen wajib diisi!");
             if (!kes) return myAlert("Kesimpulan & Rencana Tindak Lanjut Re-Asesmen wajib diisi!");
 
@@ -8201,7 +8497,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 const payload = {
                     id_pm: id,
                     nama_pm: pm ? pm.nama : '-',
-                    peksos: currentUser.name,
+                    peksos: (currentUser && currentUser.name) || 'Pekerja Sosial',
                     tahap,
                     tgl_reasesmen: tgl,
                     fisik,
@@ -8215,8 +8511,11 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 closeModalReasesmen();
                 await myAlert("Re-Asesmen Berkala berhasil disimpan dan otomatis masuk ke timeline riwayat pelayanan!");
 
+                // Refresh reasesmen list & detail jika tampilan detail sedang terbuka
                 if (el('view-detail') && !el('view-detail').classList.contains('hidden')) {
-                    showDetail(id);
+                    await showDetail(id);
+                } else {
+                    await loadReasesmenDetailList(id);
                 }
             } catch (e) {
                 console.error("submitReasesmen error:", e);
@@ -8233,58 +8532,20 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             container.innerHTML = '<div class="text-center py-6 text-gray-400 text-xs italic">Memuat riwayat re-asesmen berkala...</div>';
             try {
                 const list = await dbGetReasesmenList(pmId);
-                if (!list || list.length === 0) {
-                    container.innerHTML = `
-                        <div class="p-8 bg-purple-50/50 rounded-2xl border border-dashed border-purple-200 text-center">
-                            <span class="material-icons text-4xl text-purple-400 mb-2">assignment_late</span>
-                            <h5 class="font-bold text-gray-800 text-sm">Belum Ada Riwayat Re-Asesmen Berkala</h5>
-                            <p class="text-xs text-gray-500 mt-1 max-w-md mx-auto">PM baru memiliki asesmen awal. Pekerja sosial dapat mengisi evaluasi triwulan/semester melalui tombol di atas.</p>
-                        </div>
-                    `;
-                    return;
+                currentPMReasesmenList = Array.isArray(list) ? list : [];
+
+                const badge = el('badge-count-reasesmen');
+                if (badge) {
+                    badge.innerText = currentPMReasesmenList.length;
+                    badge.classList.toggle('hidden', currentPMReasesmenList.length === 0);
                 }
 
-                let html = '';
-                list.forEach((r, idx) => {
-                    html += `
-                        <div class="p-5 bg-white rounded-2xl border border-purple-100 shadow-sm hover:shadow transition space-y-3">
-                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-purple-100 pb-3">
-                                <div class="flex items-center gap-2">
-                                    <span class="px-3 py-1 rounded-full text-xs font-black bg-purple-600 text-white shadow-xs">${r.tahap}</span>
-                                    <span class="text-xs text-purple-900 font-bold">• ${formatDateStandard(r.tgl_reasesmen)}</span>
-                                </div>
-                                <span class="text-xs text-gray-500 flex items-center gap-1">
-                                    <span class="material-icons text-sm text-purple-600">person</span> Peksos: <b>${r.peksos || '-'}</b>
-                                </span>
-                            </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                                <div class="p-2.5 bg-slate-50 rounded-xl border border-gray-100">
-                                    <b class="text-gray-700 block mb-1">1. Fisik & Kesehatan:</b>
-                                    <span class="text-gray-600">${r.fisik || '-'}</span>
-                                </div>
-                                <div class="p-2.5 bg-slate-50 rounded-xl border border-gray-100">
-                                    <b class="text-gray-700 block mb-1">2. Emosi & Psikologis:</b>
-                                    <span class="text-gray-600">${r.psikologis || '-'}</span>
-                                </div>
-                                <div class="p-2.5 bg-slate-50 rounded-xl border border-gray-100">
-                                    <b class="text-gray-700 block mb-1">3. Interaksi Sosial:</b>
-                                    <span class="text-gray-600">${r.sosial || '-'}</span>
-                                </div>
-                                <div class="p-2.5 bg-slate-50 rounded-xl border border-gray-100">
-                                    <b class="text-gray-700 block mb-1">4. Vokasional & Keterampilan:</b>
-                                    <span class="text-gray-600">${r.vokasional || '-'}</span>
-                                </div>
-                            </div>
-                            <div class="p-3 bg-purple-50/70 rounded-xl border border-purple-200 text-xs">
-                                <b class="text-purple-950 block mb-1 flex items-center gap-1">
-                                    <span class="material-icons text-sm text-purple-700">recommend</span> Kesimpulan & Rencana Tindak Lanjut:
-                                </b>
-                                <p class="text-purple-900 leading-relaxed font-medium">${r.kesimpulan || '-'}</p>
-                            </div>
-                        </div>
-                    `;
-                });
-                container.innerHTML = html;
+                const sumContent = el('reasesmen-summary-content');
+                if (sumContent) {
+                    sumContent.innerHTML = getReasesmenSummaryHtml(currentPMReasesmenList, pmId);
+                }
+
+                container.innerHTML = generateReasesmenCardsHtml(currentPMReasesmenList);
             } catch (e) {
                 container.innerHTML = `<div class="p-4 bg-rose-50 text-rose-700 text-xs rounded-xl">Gagal memuat re-asesmen: ${e.message}</div>`;
             }
