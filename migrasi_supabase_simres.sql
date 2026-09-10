@@ -122,6 +122,68 @@ END $$;
 -- Index username pada tabel akun agar proses login & pencarian user instan
 CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
+-- -------------------------------------------------------------------------
+-- 7. PEMBUATAN TABEL CAREGIVER_KLASTER (Penugasan Caregiver per Klaster oleh Pimpinan)
+-- -------------------------------------------------------------------------
+-- Tabel ini mencatat penugasan Caregiver untuk melayani klaster tertentu (Disabilitas, Anak, Lansia, dll)
+CREATE TABLE IF NOT EXISTS public.caregiver_klaster (
+    id TEXT PRIMARY KEY,
+    id_caregiver TEXT,
+    nama_caregiver TEXT NOT NULL,
+    username_caregiver TEXT,
+    klaster TEXT NOT NULL,
+    keterangan TEXT,
+    assigned_by TEXT DEFAULT 'Pimpinan',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Pastikan kolom tabel akun juga memiliki kolom klaster jika diperlukan
+ALTER TABLE IF EXISTS public.akun
+    ADD COLUMN IF NOT EXISTS klaster TEXT;
+
+-- Pastikan semua kolom pada caregiver_klaster tersedia
+ALTER TABLE IF EXISTS public.caregiver_klaster
+    ADD COLUMN IF NOT EXISTS id TEXT,
+    ADD COLUMN IF NOT EXISTS id_caregiver TEXT,
+    ADD COLUMN IF NOT EXISTS nama_caregiver TEXT,
+    ADD COLUMN IF NOT EXISTS username_caregiver TEXT,
+    ADD COLUMN IF NOT EXISTS klaster TEXT,
+    ADD COLUMN IF NOT EXISTS keterangan TEXT,
+    ADD COLUMN IF NOT EXISTS assigned_by TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Row Level Security (RLS) untuk tabel caregiver_klaster
+ALTER TABLE public.caregiver_klaster ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public all caregiver_klaster') THEN
+        CREATE POLICY "Allow public all caregiver_klaster" ON public.caregiver_klaster FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+END $$;
+
+-- Index pencarian cepat penugasan klaster & nama caregiver
+CREATE INDEX IF NOT EXISTS idx_cg_klaster_nama ON public.caregiver_klaster(nama_caregiver);
+CREATE INDEX IF NOT EXISTS idx_cg_klaster_klaster ON public.caregiver_klaster(klaster);
+
+-- -------------------------------------------------------------------------
+-- 8. PEMBARUAN KOLOM DOKUMENTASI JURNAL & BAST TERMINASI
+-- -------------------------------------------------------------------------
+-- Link dokumen BAST pada proses terminasi PM
+ALTER TABLE IF EXISTS public.master_pm 
+    ADD COLUMN IF NOT EXISTS bast_terminasi_url TEXT;
+
+ALTER TABLE IF EXISTS public.arsip_alumni 
+    ADD COLUMN IF NOT EXISTS bast_terminasi_url TEXT;
+
+-- Link dokumentasi (foto/kegiatan) pada catatan jurnal layanan harian
+ALTER TABLE IF EXISTS public.jurnal_layanan 
+    ADD COLUMN IF NOT EXISTS dokumen_url TEXT;
+
 -- =========================================================================
 -- SELESAI: Seluruh tabel & kolom pendukung SIMRES siap digunakan 100%!
 -- =========================================================================
+
+

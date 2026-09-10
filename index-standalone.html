@@ -256,6 +256,7 @@
                     bastUrl: row.bast_url || '',
                     pernyataanUrl: row.pernyataan_url || '',
                     alasan: row.alasan_terminasi || '',
+                    bast_terminasi_url: row.bast_terminasi_url || '',
                     layanan: row.layanan || 'Residensial',
                     lokasi: row.lokasi_penempatan || 'Belum Ditentukan',
                     kluster: as.kluster || '-',
@@ -315,6 +316,211 @@
             });
 
             return list.sort();
+        }
+
+        /**
+         * Ambil detail akun Caregiver (id, username, nama, roles)
+         */
+        async function dbGetCaregiverAccountsDetailed() {
+            const client = getSupabase();
+            if (!client) {
+                const localUsers = await dbGetAllUsersLocalFallback();
+                return (localUsers || []).filter(u => {
+                    const rolesStr = Array.isArray(u.roles) ? u.roles.join(',') : String(u.roles);
+                    return rolesStr.toLowerCase().includes('caregiver');
+                });
+            }
+
+            const { data, error } = await client
+                .from('akun')
+                .select('id, username, nama, roles');
+
+            if (error) return [];
+
+            const list = [];
+            (data || []).forEach(u => {
+                const rolesStr = Array.isArray(u.roles) ? u.roles.join(',') : String(u.roles);
+                if (rolesStr.toLowerCase().includes('caregiver')) {
+                    list.push({
+                        id: u.id,
+                        username: u.username,
+                        nama: u.nama,
+                        roles: u.roles
+                    });
+                }
+            });
+
+            return list.sort((a, b) => a.nama.localeCompare(b.nama));
+        }
+
+        /**
+         * Ambil daftar penugasan Caregiver berdasarkan klaster
+         */
+        async function dbGetPenugasanCaregiver() {
+            const client = getSupabase();
+            if (!client) {
+                const local = localStorage.getItem('SIMRES_CAREGIVER_KLASTER');
+                if (local) {
+                    try { return JSON.parse(local); } catch (e) { }
+                }
+                return [];
+            }
+
+            const { data, error } = await client
+                .from('caregiver_klaster')
+                .select('*')
+                .order('nama_caregiver', { ascending: true });
+
+            if (error) {
+                console.warn("Supabase fetch caregiver_klaster error, fallback ke local storage:", error.message);
+                const local = localStorage.getItem('SIMRES_CAREGIVER_KLASTER');
+                if (local) {
+                    try { return JSON.parse(local); } catch (e) { }
+                }
+                return [];
+            }
+
+            localStorage.setItem('SIMRES_CAREGIVER_KLASTER', JSON.stringify(data || []));
+            return data || [];
+        }
+
+        /**
+         * Simpan / Perbarui penugasan Caregiver ke Klaster oleh Pimpinan
+         */
+        async function dbSimpanPenugasanCaregiver(d) {
+            const client = getSupabase();
+            const nama = String(d.nama_caregiver || d.nama || '').trim();
+            if (!nama) throw new Error("Nama Caregiver wajib diisi!");
+
+            const klasters = Array.isArray(d.klasters)
+                ? d.klasters.filter(Boolean)
+                : (d.klaster ? String(d.klaster).split(',').map(s => s.trim()).filter(Boolean) : []);
+
+            const klasterStr = klasters.join(', ');
+            const idCg = d.id_caregiver || 'CGK-' + Date.now();
+            const username = d.username_caregiver || d.username || '';
+            const keterangan = d.keterangan || '';
+            const assignedBy = (currentUser && currentUser.name) ? currentUser.name : 'Pimpinan';
+
+            const payload = {
+                id: d.id || ('CGK-' + nama.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()),
+                id_caregiver: idCg,
+                nama_caregiver: nama,
+                username_caregiver: username,
+                klaster: klasterStr,
+                keterangan: keterangan,
+                assigned_by: assignedBy,
+                updated_at: new Date().toISOString()
+            };
+
+            if (client) {
+                const { error } = await client
+                    .from('caregiver_klaster')
+                    .upsert(payload, { onConflict: 'id' });
+                if (error) {
+                    console.warn("Supabase upsert caregiver_klaster error:", error.message);
+                }
+            }
+
+            // Simpan juga ke fallback localStorage
+            let currentList = await dbGetPenugasanCaregiver();
+            const idx = currentList.findIndex(c => c.id === payload.id || c.nama_caregiver.toLowerCase() === nama.toLowerCase());
+            if (idx >= 0) {
+                currentList[idx] = payload;
+            } else {
+                currentList.push(payload);
+            }
+            localStorage.setItem('SIMRES_CAREGIVER_KLASTER', JSON.stringify(currentList));
+            allPenugasanCaregiver = currentList;
+
+            // Sinkronisasi Caregiver di master_pm untuk semua PM aktif sesuai klaster
+            await syncMasterPmCaregivers();
+
+            return "OK";
+        }
+
+        /**
+         * Hapus Penugasan Klaster Caregiver
+         */
+        async function dbHapusPenugasanCaregiver(caregiverNama) {
+            const client = getSupabase();
+            const nama = String(caregiverNama || '').trim();
+            if (!nama) return "OK";
+
+            if (client) {
+                const { error } = await client
+                    .from('caregiver_klaster')
+                    .delete()
+                    .ilike('nama_caregiver', nama);
+                if (error) {
+                    console.warn("Supabase delete caregiver_klaster error:", error.message);
+                }
+            }
+
+            let currentList = await dbGetPenugasanCaregiver();
+            currentList = currentList.filter(c => c.nama_caregiver.toLowerCase() !== nama.toLowerCase());
+            localStorage.setItem('SIMRES_CAREGIVER_KLASTER', JSON.stringify(currentList));
+            allPenugasanCaregiver = currentList;
+
+            await syncMasterPmCaregivers();
+            return "OK";
+        }
+
+        /**
+         * Helper: Dapatkan daftar nama Caregiver untuk klaster tertentu
+         */
+        function getCaregiversForKlaster(klasterName) {
+            if (!klasterName || klasterName === '-') return [];
+            const kTarget = String(klasterName).toLowerCase().trim();
+            const setCg = new Set();
+            (allPenugasanCaregiver || []).forEach(item => {
+                const itemKlasters = (item.klaster || '').split(',').map(s => s.toLowerCase().trim());
+                if (itemKlasters.includes(kTarget)) {
+                    setCg.add(item.nama_caregiver);
+                }
+            });
+            return Array.from(setCg);
+        }
+
+        /**
+         * Helper: Dapatkan daftar klaster untuk seorang Caregiver
+         */
+        function getKlastersForCaregiver(caregiverNama) {
+            if (!caregiverNama) return [];
+            const cgTarget = String(caregiverNama).toLowerCase().trim();
+            const rec = (allPenugasanCaregiver || []).find(item => (item.nama_caregiver || '').toLowerCase().trim() === cgTarget);
+            if (!rec || !rec.klaster) return [];
+            return rec.klaster.split(',').map(s => s.trim()).filter(Boolean);
+        }
+
+        /**
+         * Helper: Sinkronisasi kolom caregiver di master_pm berdasarkan klaster
+         */
+        async function syncMasterPmCaregivers() {
+            const client = getSupabase();
+            if (!Array.isArray(allPM)) return;
+
+            try {
+                const updates = [];
+                allPM.forEach(p => {
+                    if (p.status === 'Aktif' && p.kluster && p.kluster !== '-') {
+                        const cgs = getCaregiversForKlaster(p.kluster);
+                        const expectedCg = cgs.length > 0 ? cgs.join(', ') : '-';
+                        if ((p.caregiver || '-').trim() !== expectedCg) {
+                            p.caregiver = expectedCg;
+                            updates.push({ id: p.id, caregiver: expectedCg });
+                        }
+                    }
+                });
+
+                if (client && updates.length > 0) {
+                    for (const u of updates) {
+                        await client.from('master_pm').update({ caregiver: u.caregiver, updated_at: new Date().toISOString() }).eq('id', u.id);
+                    }
+                }
+            } catch (err) {
+                console.warn("syncMasterPmCaregivers warning:", err);
+            }
         }
 
         /**
@@ -458,9 +664,16 @@
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
             // Update Master PM Status -> Aktif & Lokasi Penempatan
-            const masterUpdate = { status: 'Aktif', updated_at: new Date().toISOString() };
-            if (d.lokasi_penempatan) {
-                masterUpdate.lokasi_penempatan = d.lokasi_penempatan;
+            const masterUpdate = {
+                status: 'Aktif',
+                lokasi_penempatan: d.lokasi_penempatan || 'Belum Ditentukan',
+                updated_at: new Date().toISOString()
+            };
+            if (d.kluster && typeof getCaregiversForKlaster === 'function') {
+                const cgs = getCaregiversForKlaster(d.kluster);
+                if (cgs && cgs.length > 0) {
+                    masterUpdate.caregiver = cgs.join(', ');
+                }
             }
             await client
                 .from('master_pm')
@@ -636,12 +849,19 @@
 
             if (error) return [];
 
-            return (data || []).map(row => ({
-                timestamp: formatDateStandard(row.timestamp, true),
-                role: row.role,
-                petugas: row.petugas,
-                text: `<b>${row.kondisi || ''}</b><br><b>${row.intervensi || ''}</b><br><i>${row.catatan || ''}</i>`
-            }));
+            return (data || []).map(row => {
+                let dokLink = '';
+                const dUrl = row.dokumen_url || (row.catatan && row.catatan.match(/Dokumentasi:\s*(https?:\/\/[^\s|]+)/)?.[1]);
+                if (dUrl) {
+                    dokLink = `<div class="mt-1.5"><a href="${dUrl}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded transition shadow-2xs"><span class="material-icons text-xs text-blue-600">attachment</span> Buka Link Dokumentasi</a></div>`;
+                }
+                return {
+                    timestamp: formatDateStandard(row.timestamp, true),
+                    role: row.role,
+                    petugas: row.petugas,
+                    text: `<b>${row.kondisi || ''}</b><br><b>${row.intervensi || ''}</b><br><i>${row.catatan || ''}</i>${dokLink}`
+                };
+            });
         }
 
         async function dbSimpanJurnal(d) {
@@ -660,9 +880,21 @@
                 intervensi: d.intervensi,
                 catatan: d.catatan
             };
+            if (d.dokumen_url) {
+                payload.dokumen_url = d.dokumen_url;
+            }
 
             const { error } = await client.from('jurnal_layanan').insert(payload);
-            if (error) throw error;
+            if (error) {
+                // Fallback jika kolom dokumen_url belum ditambahkan di Supabase
+                if (payload.dokumen_url) {
+                    delete payload.dokumen_url;
+                    const { error: errRetry } = await client.from('jurnal_layanan').insert(payload);
+                    if (errRetry) throw errRetry;
+                } else {
+                    throw error;
+                }
+            }
             return "OK";
         }
 
@@ -690,18 +922,29 @@
         /**
          * Pengajuan & ACC Terminasi
          */
-        async function dbAjukanTerminasi(id, reason) {
+        async function dbAjukanTerminasi(id, reason, bastUrl = '') {
             const client = getSupabase();
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
-            const { error } = await client
+            const payload = {
+                status: 'Pengajuan Terminasi',
+                alasan_terminasi: reason,
+                updated_at: new Date().toISOString()
+            };
+            if (bastUrl) {
+                payload.bast_terminasi_url = bastUrl;
+            }
+
+            let { error } = await client
                 .from('master_pm')
-                .update({
-                    status: 'Pengajuan Terminasi',
-                    alasan_terminasi: reason,
-                    updated_at: new Date().toISOString()
-                })
+                .update(payload)
                 .eq('id', id);
+
+            if (error && error.message && error.message.includes('bast_terminasi_url')) {
+                delete payload.bast_terminasi_url;
+                const retry = await client.from('master_pm').update(payload).eq('id', id);
+                error = retry.error;
+            }
 
             if (error) throw error;
             return "OK";
@@ -728,6 +971,7 @@
             const tglMasuk = masterRow.tgl_masuk;
             const tglTerminasi = new Date().toISOString();
             const alasanTerminasi = masterRow.alasan_terminasi || 'Terminasi Selesai Service';
+            const bastTerminasiUrl = masterRow.bast_terminasi_url || '';
             const layananStr = masterRow.layanan || 'Residensial';
             const pjKasus = masterRow.pj || '-';
             const fotoUrl = masterRow.foto_url || '';
@@ -742,6 +986,7 @@
                 tgl_masuk: formatDateStandard(tglMasuk),
                 tgl_keluar: formatDateStandard(tglTerminasi),
                 alasan: alasanTerminasi,
+                bast_terminasi_url: bastTerminasiUrl,
                 layanan: layananStr,
                 pj: pjKasus,
                 fotoUrl: fotoUrl,
@@ -761,11 +1006,17 @@
                 pj_kasus: pjKasus,
                 foto_url: fotoUrl,
                 ktp_url: ktpUrl,
+                bast_terminasi_url: bastTerminasiUrl,
                 full_asesmen_json: enrichedDetail
             };
 
             // Insert into Arsip Alumni
-            const { error: errA } = await client.from('arsip_alumni').upsert(alumniPayload, { onConflict: 'id_pm' });
+            let { error: errA } = await client.from('arsip_alumni').upsert(alumniPayload, { onConflict: 'id_pm' });
+            if (errA && errA.message && errA.message.includes('bast_terminasi_url')) {
+                delete alumniPayload.bast_terminasi_url;
+                const retryA = await client.from('arsip_alumni').upsert(alumniPayload, { onConflict: 'id_pm' });
+                errA = retryA.error;
+            }
             if (errA) throw errA;
 
             // ZERO DELETION POLICY: Data PM tidak pernah dihapus! Cukup perbarui status menjadi 'Terminasi'
@@ -1640,7 +1891,8 @@
                     { key: 'notifikasi_kesehatan', title: 'NOTIFIKASI_KESEHATAN' },
                     { key: 'arsip_alumni', title: 'ARSIP_ALUMNI' },
                     { key: 'master_wisma', title: 'MASTER_WISMA' },
-                    { key: 'akun', title: 'AKUN' }
+                    { key: 'akun', title: 'AKUN' },
+                    { key: 'caregiver_klaster', title: 'CAREGIVER_KLASTER' }
                 ];
 
                 const workbook = XLSX.utils.book_new();
@@ -1657,6 +1909,7 @@
                             else if (t.key === 'master_wisma') rows = await dbGetWisma();
                             else if (t.key === 'master_vokasional') rows = await dbGetMasterVokasional();
                             else if (t.key === 'akun') rows = await apiCall('getAllUsers');
+                            else if (t.key === 'caregiver_klaster') rows = await dbGetPenugasanCaregiver();
                         }
                     } catch (e) {
                         console.warn(`Gagal fetch tabel ${t.key}:`, e.message);
@@ -1697,7 +1950,7 @@
 
         // Map kamus alias nama kolom Excel ke nama kolom resmi PostgreSQL Supabase
         const TABLE_VALID_COLUMNS = {
-            master_pm: new Set(['id', 'nik', 'nama', 'tgl_masuk', 'tgl_masuk_pertama', 'status', 'pj', 'caregiver', 'foto_url', 'ktp_url', 'bast_url', 'pernyataan_url', 'alasan_terminasi', 'extra', 'layanan', 'lokasi_penempatan', 'tgl_kontrak_mulai', 'tgl_kontrak_habis', 'surat_kontrak_url', 'vokasional', 'tgl_terminasi', 'updated_at']),
+            master_pm: new Set(['id', 'nik', 'nama', 'tgl_masuk', 'tgl_masuk_pertama', 'status', 'pj', 'caregiver', 'foto_url', 'ktp_url', 'bast_url', 'pernyataan_url', 'bast_terminasi_url', 'alasan_terminasi', 'extra', 'layanan', 'lokasi_penempatan', 'tgl_kontrak_mulai', 'tgl_kontrak_habis', 'surat_kontrak_url', 'vokasional', 'tgl_terminasi', 'updated_at']),
             master_wisma: new Set(['id', 'wilayah', 'nama_wisma', 'jenis_wisma', 'nama_ruang', 'kapasitas', 'keterangan', 'created_at']),
             asesmen_detil: new Set([
                 'id', 'nama', 'layanan', 'lokasi_penempatan', 'tgl_masuk_pertama', 'bast_url', 'pernyataan_url', 'tmp_lahir', 'tgl_lahir', 'jk', 'agama', 'nik_pm', 'no_kk', 'telp',
@@ -1715,9 +1968,10 @@
             master_vokasional: new Set(['id', 'nama_vokasional', 'kategori', 'instruktur', 'deskripsi', 'status', 'created_at']),
             reasesmen_pm: new Set(['id', 'id_pm', 'nama_pm', 'peksos', 'tahap', 'tgl_reasesmen', 'fisik', 'psikologis', 'sosial', 'vokasional', 'kesimpulan', 'created_at', 'updated_at']),
             notifikasi_kesehatan: new Set(['id', 'timestamp', 'id_pm', 'nama_pm', 'kategori', 'tenaga_kesehatan', 'petugas', 'tgl_jadwal', 'detail', 'status', 'peksos', 'caregiver', 'catatan']),
-            jurnal_layanan: new Set(['id_log', 'timestamp', 'id_pm', 'nama_pm', 'role', 'petugas', 'kondisi', 'intervensi', 'catatan']),
-            arsip_alumni: new Set(['id_pm', 'nik', 'nama', 'tgl_masuk', 'tgl_masuk_pertama', 'tgl_terminasi', 'alasan_terminasi', 'layanan', 'kluster', 'ragam', 'pj_kasus', 'foto_url', 'ktp_url', 'bast_url', 'pernyataan_url', 'full_asesmen_json']),
-            akun: new Set(['id', 'username', 'password', 'nama', 'roles'])
+            jurnal_layanan: new Set(['id_log', 'timestamp', 'id_pm', 'nama_pm', 'role', 'petugas', 'kondisi', 'intervensi', 'catatan', 'dokumen_url']),
+            arsip_alumni: new Set(['id_pm', 'nik', 'nama', 'tgl_masuk', 'tgl_masuk_pertama', 'tgl_terminasi', 'alasan_terminasi', 'layanan', 'kluster', 'ragam', 'pj_kasus', 'foto_url', 'ktp_url', 'bast_url', 'pernyataan_url', 'bast_terminasi_url', 'full_asesmen_json']),
+            akun: new Set(['id', 'username', 'password', 'nama', 'roles', 'klaster']),
+            caregiver_klaster: new Set(['id', 'id_caregiver', 'nama_caregiver', 'username_caregiver', 'klaster', 'keterangan', 'assigned_by', 'created_at', 'updated_at'])
         };
 
         const COLUMN_ALIAS_MAP = {
@@ -1853,7 +2107,9 @@
             'petugas': 'petugas', 'nama_petugas': 'petugas', 'petugas_nama': 'petugas',
             'kondisi': 'kondisi', 'kondisi_so': 'kondisi', 'kondisi_pm': 'kondisi', 'so': 'kondisi',
             'intervensi': 'intervensi', 'intervensi_ap': 'intervensi', 'intervensi_layanan': 'intervensi', 'ap': 'intervensi',
-            'catatan': 'catatan', 'catatan_khusus': 'catatan', 'keterangan_khusus': 'catatan', 'keterangan': 'catatan'
+            'catatan': 'catatan', 'catatan_khusus': 'catatan', 'keterangan_khusus': 'catatan', 'keterangan': 'catatan',
+            'bast_terminasi_url': 'bast_terminasi_url', 'bast_terminasi': 'bast_terminasi_url', 'link_bast_terminasi': 'bast_terminasi_url',
+            'dokumen_url': 'dokumen_url', 'link_dokumentasi': 'dokumen_url', 'dokumentasi_url': 'dokumen_url', 'foto_dokumentasi': 'dokumen_url'
         };
 
         function normalizeExcelRowForTable(tableName, rawRow) {
@@ -2201,6 +2457,10 @@
                     <span class="font-medium">Keluar Atas Permintaan Sendiri (APS)</span>
                 </label>
                 <label class="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input type="radio" name="alasan_term" value="Keluar Lembaga Tanpa Izin" class="mr-3 text-primary">
+                    <span class="font-medium">Keluar Lembaga Tanpa Izin</span>
+                </label>
+                <label class="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
                     <input type="radio" name="alasan_term" value="Selesai Rehabilitasi / Mandiri"
                         class="mr-3 text-primary">
                     <span class="font-medium">Selesai Rehabilitasi / Mandiri</span>
@@ -2214,6 +2474,17 @@
                     <input type="radio" name="alasan_term" value="Meninggal Dunia" class="mr-3 text-primary">
                     <span class="font-medium">Meninggal Dunia</span>
                 </label>
+            </div>
+            <div class="mb-5">
+                <label class="block text-xs font-semibold text-gray-700 mb-1">Link Dokumen / Berkas BAST Terminasi
+                    (Opsional)</label>
+                <div class="relative">
+                    <span class="material-icons absolute left-3 top-2.5 text-gray-400 text-sm">link</span>
+                    <input type="url" id="term-bast-url" placeholder="https://drive.google.com/..."
+                        class="w-full pl-9 pr-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-primary focus:outline-none">
+                </div>
+                <p class="text-[10px] text-gray-400 mt-1">Masukkan tautan file BAST Terminasi (Google Drive / Cloud)
+                    jika tersedia.</p>
             </div>
             <div class="flex gap-3">
                 <button onclick="closeModalTerm()"
@@ -2438,7 +2709,8 @@
                     <input type="file" id="kontrak-pm-file" accept=".pdf,image/*"
                         class="input-field bg-white file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-sky-100 file:text-sky-800 hover:file:bg-sky-200 cursor-pointer">
                     <p class="text-[10px] text-gray-500 mt-1">Berkas akan tersimpan aman di Supabase Storage (bucket:
-                        <code>berkas-simres/kontrak/</code>).</p>
+                        <code>berkas-simres/kontrak/</code>).
+                    </p>
                 </div>
 
                 <div id="kontrak-pm-preview" class="p-3 bg-gray-50 rounded-xl border border-gray-200 hidden">
@@ -3205,6 +3477,128 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         </div>
     </div>
 
+    <!-- MODAL 9: PENUGASAN CAREGIVER BERBASIS KLASTER (ROLE PIMPINAN) -->
+    <div id="modal-penugasan-caregiver"
+        class="fixed inset-0 bg-black/60 z-[65] hidden flex items-center justify-center p-4 backdrop-blur-xs">
+        <div
+            class="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl border border-gray-100 max-h-[90vh] overflow-y-auto animate-[fadeIn_0.2s_ease-out]">
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
+                <div class="flex items-center gap-2">
+                    <span class="p-2 bg-teal-50 text-teal-700 rounded-xl">
+                        <span class="material-icons text-xl">assignment_ind</span>
+                    </span>
+                    <div>
+                        <h4 class="font-extrabold text-gray-800 text-base" id="modal-title-cg">Penugasan Klaster
+                            Caregiver</h4>
+                        <p class="text-[11px] text-gray-500">Wewenang Pimpinan SIMRES</p>
+                    </div>
+                </div>
+                <button onclick="closeModalPenugasanCaregiver()" class="text-gray-400 hover:text-gray-600 transition">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <!-- Dropdown Pilih Caregiver -->
+                <div>
+                    <label class="lbl flex items-center justify-between">
+                        <span>Pilih Caregiver / Pengasuh *</span>
+                        <span class="text-[10px] text-teal-700 font-bold" id="lbl-cg-status">Role Caregiver</span>
+                    </label>
+                    <select id="modal-cg-select" onchange="onModalCaregiverChange()"
+                        class="input-field font-semibold text-slate-800 bg-teal-50/40 border-teal-200">
+                        <option value="">-- Pilih Caregiver --</option>
+                    </select>
+                </div>
+
+                <!-- Pilihan Klaster Multi-Select (Checkboxes) -->
+                <div>
+                    <label class="lbl flex items-center justify-between">
+                        <span>Klaster Penempatan Tugas *</span>
+                        <span class="text-[10px] text-gray-400 font-normal">Bisa pilih lebih dari 1 klaster</span>
+                    </label>
+                    <div class="grid grid-cols-1 gap-2.5 p-3 bg-slate-50 rounded-xl border border-slate-200"
+                        id="modal-cg-klaster-checkboxes">
+                        <label
+                            class="flex items-center gap-3 p-2.5 bg-white rounded-lg border border-gray-200 hover:bg-teal-50/50 cursor-pointer transition">
+                            <input type="checkbox" name="cg-klaster-opt" value="Penyandang Disabilitas"
+                                class="w-4 h-4 text-teal-600 rounded">
+                            <div class="flex-1">
+                                <span class="text-xs font-bold text-slate-800 block">Penyandang Disabilitas</span>
+                                <span class="text-[10px] text-gray-500">Fisik, Intelektual, Mental, Netra, Rungu,
+                                    Wicara, Ganda</span>
+                            </div>
+                        </label>
+                        <label
+                            class="flex items-center gap-3 p-2.5 bg-white rounded-lg border border-gray-200 hover:bg-teal-50/50 cursor-pointer transition">
+                            <input type="checkbox" name="cg-klaster-opt" value="Anak"
+                                class="w-4 h-4 text-teal-600 rounded">
+                            <div class="flex-1">
+                                <span class="text-xs font-bold text-slate-800 block">Anak</span>
+                                <span class="text-[10px] text-gray-500">Anak berhadapan hukum, terlantar, disabilitas
+                                    anak, dll</span>
+                            </div>
+                        </label>
+                        <label
+                            class="flex items-center gap-3 p-2.5 bg-white rounded-lg border border-gray-200 hover:bg-teal-50/50 cursor-pointer transition">
+                            <input type="checkbox" name="cg-klaster-opt" value="Kelompok Rentan"
+                                class="w-4 h-4 text-teal-600 rounded">
+                            <div class="flex-1">
+                                <span class="text-xs font-bold text-slate-800 block">Kelompok Rentan</span>
+                                <span class="text-[10px] text-gray-500">Tuna susila, gelandangan, pengemis, korban
+                                    trafficking</span>
+                            </div>
+                        </label>
+                        <label
+                            class="flex items-center gap-3 p-2.5 bg-white rounded-lg border border-gray-200 hover:bg-teal-50/50 cursor-pointer transition">
+                            <input type="checkbox" name="cg-klaster-opt" value="Lansia"
+                                class="w-4 h-4 text-teal-600 rounded">
+                            <div class="flex-1">
+                                <span class="text-xs font-bold text-slate-800 block">Lansia</span>
+                                <span class="text-[10px] text-gray-500">Lanjut Usia Terlantar / Potensial &
+                                    Non-Potensial</span>
+                            </div>
+                        </label>
+                        <label
+                            class="flex items-center gap-3 p-2.5 bg-white rounded-lg border border-gray-200 hover:bg-teal-50/50 cursor-pointer transition">
+                            <input type="checkbox" name="cg-klaster-opt" value="KPN ODH"
+                                class="w-4 h-4 text-teal-600 rounded">
+                            <div class="flex-1">
+                                <span class="text-xs font-bold text-slate-800 block">KPN ODH</span>
+                                <span class="text-[10px] text-gray-500">Korban Penyalahgunaan Napza & ODHIV</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Catatan / Keterangan Penempatan -->
+                <div>
+                    <label class="lbl">Keterangan / Dasar Penugasan (Opsional)</label>
+                    <input type="text" id="modal-cg-keterangan"
+                        placeholder="Contoh: SK Tugas No. 04/2026 atau Shift Asrama Reguler"
+                        class="input-field text-xs">
+                </div>
+
+                <div class="bg-amber-50 p-3 rounded-xl border border-amber-200 flex gap-2 items-start">
+                    <span class="material-icons text-amber-600 text-sm mt-0.5">info</span>
+                    <p class="text-[11px] text-amber-800 leading-tight">
+                        Setelah disimpan, Caregiver akan dapat melihat dan melayani seluruh PM aktif yang berada di
+                        klaster tugas terpilih pada Dashboard Caregiver mereka.
+                    </p>
+                </div>
+            </div>
+
+            <div class="mt-6 flex gap-3">
+                <button onclick="closeModalPenugasanCaregiver()"
+                    class="w-1/3 bg-gray-200 text-gray-800 font-bold py-2.5 rounded-xl hover:bg-gray-300 transition">Batal</button>
+                <button onclick="submitPenugasanCaregiverModal()"
+                    class="w-2/3 bg-teal-600 text-white font-bold py-2.5 rounded-xl hover:bg-teal-700 shadow-md transition flex items-center justify-center gap-1 active:scale-95">
+                    <span class="material-icons text-sm">check_circle</span> Simpan Penugasan
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- NAVBAR -->
     <div id="navbar" class="bg-dark text-white shadow-lg sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -3794,10 +4188,14 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
                 <button onclick="switchPimTab('tugas')" id="pim-tab-tugas" class="tab-btn active-tab">
                     <span class="material-icons mb-1">assignment_ind</span>
                     <span class="text-xs font-bold">Penugasan PJ</span>
+                </button>
+                <button onclick="switchPimTab('caregiver')" id="pim-tab-caregiver" class="tab-btn">
+                    <span class="material-icons mb-1">health_and_safety</span>
+                    <span class="text-xs font-bold">Penugasan Caregiver</span>
                 </button>
                 <button onclick="switchPimTab('approval')" id="pim-tab-approval" class="tab-btn">
                     <span class="material-icons mb-1">verified</span>
@@ -3855,6 +4253,76 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 </div>
                 <div class="overflow-x-auto table-wrap p-0">
                     <table class="min-w-full divide-y divide-gray-200" id="tbl-tugas"></table>
+                </div>
+            </div>
+
+            <!-- PIMPINAN TAB: PENUGASAN CAREGIVER BERBASIS KLASTER -->
+            <div id="pim-content-caregiver" class="hidden space-y-6">
+                <!-- BANNER HEADER -->
+                <div
+                    class="bg-gradient-to-r from-teal-700 via-emerald-600 to-teal-800 rounded-2xl p-6 text-white shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="p-2 bg-white/20 backdrop-blur rounded-xl">
+                                <span class="material-icons text-teal-100 text-2xl">health_and_safety</span>
+                            </span>
+                            <div>
+                                <h4 class="text-lg font-black tracking-wide text-white">Penugasan Caregiver Berdasarkan
+                                    Klaster</h4>
+                                <span
+                                    class="text-[10px] uppercase font-bold tracking-wider text-teal-200 bg-white/10 px-2 py-0.5 rounded-full">Kewenangan
+                                    Pimpinan</span>
+                            </div>
+                        </div>
+                        <p class="text-xs text-teal-100 mt-2 max-w-2xl leading-relaxed">
+                            Penetapan tugas pengasuhan / caregiver berada di bawah wewenang Pimpinan. Caregiver melayani
+                            seluruh Penerima Manfaat yang berada di klaster penempatan tugas mereka masing-masing.
+                        </p>
+                    </div>
+                    <button onclick="openModalAturCaregiver()"
+                        class="bg-white text-teal-900 hover:bg-teal-50 px-4 py-2.5 rounded-xl text-xs font-black shadow-md hover:shadow-lg transition flex items-center gap-1.5 shrink-0 active:scale-95 cursor-pointer">
+                        <span class="material-icons text-sm">assignment_add</span>
+                        <span>+ Tetapkan Klaster Caregiver</span>
+                    </button>
+                </div>
+
+                <!-- OVERVIEW KLASTER CARDS -->
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h5
+                            class="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <span class="material-icons text-teal-600 text-base">domain</span>
+                            Sebaran Caregiver per Klaster
+                        </h5>
+                        <span class="text-xs text-slate-500 font-medium">5 Klaster Standar SIMRES</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3.5" id="pim-cg-klaster-cards">
+                        <!-- Rendered dynamically by renderPimpinanCaregiver() -->
+                    </div>
+                </div>
+
+                <!-- DAFTAR AKUN CAREGIVER & STATUS PENUGASAN -->
+                <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
+                    <div
+                        class="bg-slate-50 px-6 py-3.5 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div>
+                            <h4 class="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                                <span class="material-icons text-teal-600 text-base">badge</span>
+                                Daftar Caregiver & Klaster Penempatan
+                            </h4>
+                            <p class="text-[11px] text-slate-500 mt-0.5">Seluruh petugas yang memiliki hak akses role
+                                Caregiver</p>
+                        </div>
+                        <span id="cg-assigned-count-badge"
+                            class="px-2.5 py-1 rounded-full text-xs font-bold bg-teal-100 text-teal-800 border border-teal-200">
+                            Memuat data...
+                        </span>
+                    </div>
+                    <div class="overflow-x-auto table-wrap p-0">
+                        <table class="min-w-full divide-y divide-gray-200" id="tbl-pimpinan-caregiver">
+                            <!-- Rendered dynamically -->
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -4300,7 +4768,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         <select id="as-ragam" class="input-field bg-yellow-50 font-bold"></select>
                     </div>
                     <div>
-                        <label class="lbl">Lokasi / Asrama Penempatan *</label>
+                        <label class="lbl">Lokasi / Asrama Penempatan (Opsional)</label>
                         <select id="as-lokasi" class="input-field bg-emerald-50 font-bold text-gray-800"></select>
                     </div>
                 </div>
@@ -4559,7 +5027,30 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                     <h3 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
                         <span class="material-icons text-teal-600">health_and_safety</span> Dashboard Caregiver
                     </h3>
-                    <p class="text-xs text-gray-500 mt-1">Pendampingan Penerima Manfaat & Pengingat Jadwal Kesehatan</p>
+                    <p class="text-xs text-gray-500 mt-1">Pendampingan Penerima Manfaat Sesuai Klaster Penempatan Tugas
+                        dari Pimpinan</p>
+                </div>
+            </div>
+
+            <!-- BANNER KLASTER PENUGASAN CAREGIVER -->
+            <div id="cg-klaster-banner"
+                class="mb-6 p-4 rounded-2xl bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 border border-teal-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-xs">
+                <div class="flex items-center gap-3">
+                    <span class="p-2.5 rounded-xl bg-teal-600 text-white shadow-xs">
+                        <span class="material-icons text-xl">domain</span>
+                    </span>
+                    <div>
+                        <span class="text-[10px] font-extrabold uppercase tracking-wider text-teal-800 block">Klaster
+                            Penempatan Tugas Anda:</span>
+                        <div class="flex flex-wrap items-center gap-1.5 mt-1" id="cg-banner-klaster-chips">
+                            <span class="text-xs text-gray-400 italic">Memuat data klaster...</span>
+                        </div>
+                    </div>
+                </div>
+                <div
+                    class="text-[11px] text-teal-800 bg-white px-3 py-1.5 rounded-xl border border-teal-200 font-bold shadow-2xs flex items-center gap-1">
+                    <span class="material-icons text-xs text-teal-600">verified_user</span> Wewenang Penugasan: <span
+                        class="text-teal-900">Pimpinan</span>
                 </div>
             </div>
 
@@ -4567,7 +5058,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-teal-500">
                     <div class="text-xs font-bold text-gray-500 uppercase">PM Ampuan Saya</div>
                     <div class="text-3xl font-black text-teal-700 mt-1" id="cg-stat-pm-count">0</div>
-                    <div class="text-[11px] text-gray-400 mt-1">PM yang ditunjuk oleh Pekerja Sosial</div>
+                    <div class="text-[11px] text-gray-400 mt-1">PM sesuai klaster penugasan dari Pimpinan</div>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-amber-500">
                     <div class="text-xs font-bold text-gray-500 uppercase">Jadwal Menunggu / Diingatkan</div>
@@ -4626,6 +5117,18 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                             class="input-field"></textarea></div>
                     <div><label class="lbl">Rencana Lanjutan</label><textarea id="jr-cat" rows="2"
                             class="input-field bg-yellow-50"></textarea></div>
+                    <div>
+                        <label class="lbl flex items-center justify-between">
+                            <span class="flex items-center gap-1.5"><span
+                                    class="material-icons text-sm text-primary">link</span> Link Dokumentasi Kegiatan /
+                                Foto</span>
+                            <span class="text-[10px] text-gray-400 font-normal">Opsional (Google Drive / Cloud
+                                URL)</span>
+                        </label>
+                        <input type="url" id="jr-dokumen"
+                            placeholder="https://drive.google.com/... atau tautan dokumentasi kegiatan"
+                            class="input-field text-xs bg-slate-50 focus:bg-white">
+                    </div>
                 </div>
 
                 <!-- FORMS INPUT KHUSUS TENAGA KESEHATAN (DOKTER, PERAWAT, PSIKOLOG, TERAPIS) -->
@@ -5230,7 +5733,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx-d3omOSZ8bFqBca5RAjVgZGx8P3_ie1dEpMF_q5ZdeyYnvV21KcS5je9zHK4nBJ3L/exec';
 
         // STATE SYSTEM
-        let currentUser = {}, allPM = [], allWisma = [], currentPMId = '', listPekerjaSosial = [];
+        let currentUser = {}, allPM = [], allWisma = [], currentPMId = '', listPekerjaSosial = [], allPenugasanCaregiver = [];
         let assessmentStatusMap = {};
         let currentHistoryRecord = null; // Stored history record for EHR import
 
@@ -5309,6 +5812,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         case 'getPeksos': return await dbGetPeksosAccounts();
                         case 'getCaregiver': return await dbGetCaregiverAccounts();
                         case 'updateCaregiver': return await dbUpdateCaregiver(data.id, data.caregiver);
+                        case 'getPenugasanCaregiver': return await dbGetPenugasanCaregiver();
+                        case 'simpanPenugasanCaregiver': return await dbSimpanPenugasanCaregiver(data);
+                        case 'hapusPenugasanCaregiver': return await dbHapusPenugasanCaregiver(data.nama_caregiver || data.caregiverNama);
                         case 'getUserLogs': return await dbGetUserLogs(data.username);
                         case 'simpanReg': return await dbSimpanRegistrasi(data);
                         case 'updatePJ': return await dbUpdatePJ(data.id, data.pj);
@@ -5320,7 +5826,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         case 'getNotifKesehatan': return await dbGetNotifikasiKesehatan(data);
                         case 'updateStatusNotif': return await dbUpdateStatusNotifikasi(data.id, data.status);
                         case 'simpanCC': return await dbSimpanCC(data);
-                        case 'ajukanTerminasi': return await dbAjukanTerminasi(data.id, data.alasan);
+                        case 'ajukanTerminasi': return await dbAjukanTerminasi(data.id, data.alasan, data.bast_terminasi_url);
                         case 'accTerminasi': return await dbAccTerminasi(data.id);
                         case 'getAlumni': return await dbGetAlumni();
                         case 'getAlumniDetail': return await dbGetAlumniDetail(data.id);
@@ -5552,14 +6058,16 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         async function refreshData() {
             showLoad(true);
             try {
-                const [pmData, statusData, wismaData] = await Promise.all([
+                const [pmData, statusData, wismaData, penugasanCgData] = await Promise.all([
                     apiCall('getAllPM'),
                     apiCall('getAssessmentStatus'),
-                    dbGetWisma()
+                    dbGetWisma(),
+                    dbGetPenugasanCaregiver()
                 ]);
                 allPM = pmData;
                 assessmentStatusMap = statusData;
                 allWisma = wismaData;
+                allPenugasanCaregiver = penugasanCgData || [];
 
                 if (currentUser.role.toLowerCase() === 'pimpinan') listPekerjaSosial = await apiCall('getPeksos');
                 renderViews();
@@ -5696,6 +6204,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         function renderPimpinan() {
             renderPimpinanTugas();
+            renderPimpinanCaregiver();
             renderPimpinanApproval();
             renderPimpinanMonitor();
             renderStats();
@@ -5723,11 +6232,14 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             const { q, lay, klu } = getSmartFilterValues('approval');
             const filtered = filterPMList(list, q, lay, klu);
 
-            let h2 = `<thead><tr><th class="${thClass}">Nama PM</th><th class="${thClass}">Alasan Terminasi</th><th class="${thClass}">Aksi</th></tr></thead><tbody>`;
+            let h2 = `<thead><tr><th class="${thClass}">Nama PM</th><th class="${thClass}">Alasan Terminasi</th><th class="${thClass}">Dokumen BAST</th><th class="${thClass}">Aksi</th></tr></thead><tbody>`;
             if (filtered.length === 0) {
-                h2 += `<tr><td colspan="3" class="p-6 text-center bg-gray-50 text-gray-500 italic">Tidak ada pengajuan terminasi sesuai filter.</td></tr>`;
+                h2 += `<tr><td colspan="4" class="p-6 text-center bg-gray-50 text-gray-500 italic">Tidak ada pengajuan terminasi sesuai filter.</td></tr>`;
             } else {
-                filtered.forEach(p => h2 += `<tr><td class="${tdClass} font-bold">${p.nama}</td><td class="${tdClass}">${p.alasan}</td><td class="${tdClass}"><button class="bg-success hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-bold shadow" onclick="accTerm('${p.id}')">ACC Terminasi</button></td></tr>`);
+                filtered.forEach(p => {
+                    const bastBadge = p.bast_terminasi_url ? `<a href="${p.bast_terminasi_url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-100 hover:text-red-900 transition"><span class="material-icons text-[14px]">description</span> Lihat BAST</a>` : '<span class="text-xs text-gray-400 italic">Tidak dilampirkan</span>';
+                    h2 += `<tr><td class="${tdClass} font-bold">${p.nama}</td><td class="${tdClass}">${p.alasan}</td><td class="${tdClass}">${bastBadge}</td><td class="${tdClass}"><button class="bg-success hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-bold shadow" onclick="accTerm('${p.id}')">ACC Terminasi</button></td></tr>`;
+                });
             }
             el('tbl-acc-term').innerHTML = h2 + '</tbody>';
             const cnt = el('sf-count-approval'); if (cnt) cnt.innerHTML = `Menampilkan <b>${filtered.length}</b> dari <b>${list.length}</b> PM`;
@@ -5866,7 +6378,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             let caregivers = [];
             try { caregivers = await apiCall('getCaregiver'); } catch (e) { }
 
-            let h = `<thead><tr><th class="${thClass}">Nama PM</th><th class="${thClass}">Kluster</th><th class="${thClass}">Jenis Layanan</th><th class="${thClass}">Lokasi Penempatan</th><th class="${thClass}">Penunjukan Caregiver</th><th class="${thClass}">Status</th><th class="${thClass}">Aksi Pelayanan</th></tr></thead><tbody>`;
+            let h = `<thead><tr><th class="${thClass}">Nama PM</th><th class="${thClass}">Kluster</th><th class="${thClass}">Jenis Layanan</th><th class="${thClass}">Lokasi Penempatan</th><th class="${thClass}">Caregiver Klaster</th><th class="${thClass}">Status</th><th class="${thClass}">Aksi Pelayanan</th></tr></thead><tbody>`;
             if (filtered.length === 0) {
                 h += `<tr><td colspan="7" class="p-6 text-center bg-gray-50 text-gray-500 italic">Tidak ada PM ampuan sesuai filter.</td></tr>`;
             } else {
@@ -5898,13 +6410,16 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         </select>
                     `;
 
-                    let cgSelect = `<select onchange="updateCaregiver('${p.id}', this.value)" class="border rounded px-2 py-1 text-xs font-bold w-full bg-teal-50 text-teal-900 border-teal-200">`;
-                    cgSelect += '<option value="">-Pilih Caregiver-</option>';
-                    caregivers.forEach(c => {
-                        const sel = (p.caregiver === c) ? 'selected' : '';
-                        cgSelect += `<option value="${c}" ${sel}>${c}</option>`;
-                    });
-                    cgSelect += `</select>`;
+                    // Caregiver Klaster ditetapkan oleh Pimpinan (Read-Only bagi Pekerja Sosial)
+                    const cgList = getCaregiversForKlaster(p.kluster);
+                    let cgDisplay = '';
+                    if (cgList && cgList.length > 0) {
+                        cgDisplay = `<div class="flex flex-wrap gap-1">${cgList.map(c => `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-200 shadow-2xs" title="Caregiver Klaster ${p.kluster}"><span class="material-icons text-[11px] text-teal-600">health_and_safety</span>${c}</span>`).join('')}</div>`;
+                    } else if (p.caregiver && p.caregiver !== '-') {
+                        cgDisplay = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-200 shadow-2xs"><span class="material-icons text-[11px] text-teal-600">health_and_safety</span>${p.caregiver}</span>`;
+                    } else {
+                        cgDisplay = `<span class="text-[11px] text-gray-400 italic flex items-center gap-1" title="Belum ada penugasan caregiver oleh Pimpinan untuk klaster ${p.kluster}"><span class="material-icons text-xs text-gray-300">hourglass_empty</span>Belum Ditugaskan</span>`;
+                    }
 
                     const btnLokasi = `
                         <button onclick="editLokasiPenempatan('${p.id}', '${p.lokasi || 'Belum Ditentukan'}')" class="text-left group flex items-center justify-between gap-1 w-full px-2.5 py-1 bg-amber-50/80 hover:bg-amber-100 border border-amber-200 rounded text-xs text-amber-900 font-semibold transition shadow-xs" title="Klik untuk edit lokasi penempatan asrama">
@@ -5963,7 +6478,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         `;
                     }
 
-                    h += `<tr><td class="${tdClass} font-bold"><div class="flex items-center gap-1.5 flex-wrap"><span>${p.nama}</span>${kontrakBadge}${balloonBadge}</div></td><td class="${tdClass}">${p.kluster}</td><td class="${tdClass} min-w-[130px]">${selLayanan}</td><td class="${tdClass} min-w-[160px]">${btnLokasi}</td><td class="${tdClass} min-w-[150px]">${cgSelect}</td><td class="${tdClass}"><span class="px-2 py-1 rounded bg-gray-100 text-xs font-semibold">${p.status}</span></td><td class="${tdClass}">${btn}</td></tr>`;
+                    h += `<tr><td class="${tdClass} font-bold"><div class="flex items-center gap-1.5 flex-wrap"><span>${p.nama}</span>${kontrakBadge}${balloonBadge}</div></td><td class="${tdClass}">${p.kluster}</td><td class="${tdClass} min-w-[130px]">${selLayanan}</td><td class="${tdClass} min-w-[160px]">${btnLokasi}</td><td class="${tdClass} min-w-[150px]">${cgDisplay}</td><td class="${tdClass}"><span class="px-2 py-1 rounded bg-gray-100 text-xs font-semibold">${p.status}</span></td><td class="${tdClass}">${btn}</td></tr>`;
                 });
             }
             el('tbl-pekerja-sosial').innerHTML = h + '</tbody>';
@@ -5984,12 +6499,36 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         async function renderCaregiver() {
             showLoad(true);
             try {
-                const list = allPM.filter(p => p.status === 'Aktif' && (p.caregiver || '').trim() === currentUser.name);
+                // Ambil klaster penugasan untuk caregiver yang sedang login
+                const myKlasters = getKlastersForCaregiver(currentUser.name);
+                const myKlastersLower = myKlasters.map(k => k.toLowerCase().trim());
+
+                // Update tampilan banner klaster di UI
+                const chipContainer = el('cg-banner-klaster-chips');
+                if (chipContainer) {
+                    if (myKlasters.length === 0) {
+                        chipContainer.innerHTML = '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1"><span class="material-icons text-xs">info</span> Belum Ditetapkan Klaster oleh Pimpinan</span>';
+                    } else {
+                        chipContainer.innerHTML = myKlasters.map(k => `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-600 text-white shadow-2xs flex items-center gap-1"><span class="material-icons text-xs">domain</span> ${k}</span>`).join('');
+                    }
+                }
+
+                // Filter PM: PM Aktif yang berada di klaster tugas caregiver (atau nama caregiver terdaftar langsung)
+                const list = allPM.filter(p => {
+                    if (p.status !== 'Aktif') return false;
+                    const pKluster = (p.kluster || '').toLowerCase().trim();
+                    const matchKlaster = myKlastersLower.length > 0 && myKlastersLower.includes(pKluster);
+                    const matchDirect = (p.caregiver || '').toLowerCase().includes((currentUser.name || '').toLowerCase());
+                    return matchKlaster || matchDirect;
+                });
                 el('cg-stat-pm-count').innerText = list.length;
 
+                // Ambil seluruh notifikasi kesehatan yang relevan untuk PM pada klaster caregiver
                 let notifs = [];
                 try {
-                    notifs = await apiCall('getNotifKesehatan', { caregiver: currentUser.name });
+                    const allNotifs = await apiCall('getNotifKesehatan');
+                    const pmIds = new Set(list.map(p => p.id));
+                    notifs = (allNotifs || []).filter(n => pmIds.has(n.id_pm) || (n.caregiver && n.caregiver.toLowerCase().includes((currentUser.name || '').toLowerCase())));
                 } catch (e) { }
 
                 const pendingNotifs = notifs.filter(n => n.status !== 'Selesai');
@@ -6009,7 +6548,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 // Render Notifikasi List
                 let nHtml = '';
                 if (notifs.length === 0) {
-                    nHtml = '<p class="text-gray-400 text-xs italic text-center py-4">Belum ada notifikasi atau jadwal kesehatan untuk PM ampuan Anda.</p>';
+                    nHtml = '<p class="text-gray-400 text-xs italic text-center py-4">Belum ada notifikasi atau jadwal kesehatan untuk PM pada klaster ampuan Anda.</p>';
                 } else {
                     notifs.forEach(n => {
                         const isDone = n.status === 'Selesai';
@@ -6053,7 +6592,11 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 // Render Table PM Caregiver
                 let tHtml = `<thead><tr><th class="${thClass}">Nama PM</th><th class="${thClass}">Kluster</th><th class="${thClass}">Layanan</th><th class="${thClass}">Lokasi Penempatan</th><th class="${thClass}">PJ Peksos</th><th class="${thClass}">Aksi</th></tr></thead><tbody>`;
                 if (list.length === 0) {
-                    tHtml += `<tr><td colspan="6" class="p-6 text-center bg-gray-50 text-gray-500 italic">Belum ada PM yang ditugaskan kepada Anda. Pekerja Sosial akan menunjuk Anda pada tabel PM ampuan mereka.</td></tr>`;
+                    if (myKlasters.length === 0) {
+                        tHtml += `<tr><td colspan="6" class="p-8 text-center bg-gray-50"><div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 text-amber-600 mb-2"><span class="material-icons text-xl">assignment_late</span></div><p class="font-bold text-gray-700 text-sm">Belum Ada Klaster Penugasan dari Pimpinan</p><p class="text-xs text-gray-500 mt-1">Pimpinan SIMRES belum menetapkan klaster penugasan untuk akun Anda. Silakan hubungi Pimpinan untuk penetapan klaster tugas.</p></td></tr>`;
+                    } else {
+                        tHtml += `<tr><td colspan="6" class="p-8 text-center bg-gray-50"><div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-teal-100 text-teal-600 mb-2"><span class="material-icons text-xl">person_search</span></div><p class="font-bold text-gray-700 text-sm">Belum Ada PM Aktif pada Klaster Anda</p><p class="text-xs text-gray-500 mt-1">Saat ini belum ada Penerima Manfaat berstatus Aktif pada klaster penugasan Anda (<b>${myKlasters.join(', ')}</b>).</p></td></tr>`;
+                    }
                 } else {
                     list.forEach(p => {
                         const activeN = cgNotifMap[p.id] || [];
@@ -6076,7 +6619,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                             '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800">Day Care</span>' :
                             ((p.layanan && p.layanan.toLowerCase().includes('rusun')) ? '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-teal-100 text-teal-800">Rusun</span>' : '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-cyan-100 text-cyan-800">Residensial</span>');
 
-                        tHtml += `<tr><td class="${tdClass} font-bold"><div class="flex items-center gap-1.5 flex-wrap"><span>${p.nama}</span>${balloonBadge}</div></td><td class="${tdClass}">${p.kluster}</td><td class="${tdClass}">${layBadge}</td><td class="${tdClass}">${p.lokasi || 'Belum Ditentukan'}</td><td class="${tdClass}">${p.pj}</td><td class="${tdClass}"><div class="flex gap-1.5"><button class="bg-primary hover:bg-dark text-white px-2 py-1 rounded text-xs font-bold" onclick="goJurnal('${p.id}')">Jurnal</button><button class="text-gray-600 hover:text-primary font-bold text-xs border px-2 py-1 rounded" onclick="showDetail('${p.id}')">Detail</button></div></td></tr>`;
+                        tHtml += `<tr><td class="${tdClass} font-bold"><div class="flex items-center gap-1.5 flex-wrap"><span>${p.nama}</span>${balloonBadge}</div></td><td class="${tdClass}"><span class="px-2 py-0.5 rounded text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">${p.kluster}</span></td><td class="${tdClass}">${layBadge}</td><td class="${tdClass}">${p.lokasi || 'Belum Ditentukan'}</td><td class="${tdClass}">${p.pj}</td><td class="${tdClass}"><div class="flex gap-1.5"><button class="bg-primary hover:bg-dark text-white px-2 py-1 rounded text-xs font-bold" onclick="goJurnal('${p.id}')">Jurnal</button><button class="text-gray-600 hover:text-primary font-bold text-xs border px-2 py-1 rounded" onclick="showDetail('${p.id}')">Detail</button></div></td></tr>`;
                     });
                 }
                 el('tbl-caregiver-pm').innerHTML = tHtml + '</tbody>';
@@ -6542,9 +7085,24 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         async function setPj(id) { showLoad(true); await apiCall('updatePJ', { id, pj: el(`sel-${id}`).value }); refreshData(); }
         async function accTerm(id) { if (await myConfirm("Apakah Anda yakin ingin menyetujui (ACC) terminasi PM ini?\n\nSemua data asesmen detil akan dipindahkan ke Arsip Alumni secara utuh.")) { showLoad(true); await apiCall('accTerminasi', { id }); refreshData(); } }
         let termId = '';
-        function openModalTerm(id) { termId = id; el('modal-terminasi').classList.remove('hidden'); }
+        function openModalTerm(id) {
+            termId = id;
+            const bastInput = el('term-bast-url');
+            if (bastInput) bastInput.value = '';
+            const radios = document.querySelectorAll('input[name="alasan_term"]');
+            radios.forEach(r => r.checked = false);
+            el('modal-terminasi').classList.remove('hidden');
+        }
         function closeModalTerm() { el('modal-terminasi').classList.add('hidden'); }
-        async function submitTerminasi() { const r = document.querySelector('input[name="alasan_term"]:checked'); if (!r) return myAlert("Pilih alasan terminasi!"); closeModalTerm(); showLoad(true); await apiCall('ajukanTerminasi', { id: termId, alasan: r.value }); refreshData(); }
+        async function submitTerminasi() {
+            const r = document.querySelector('input[name="alasan_term"]:checked');
+            if (!r) return myAlert("Pilih alasan terminasi!");
+            const bastUrl = el('term-bast-url') ? el('term-bast-url').value.trim() : '';
+            closeModalTerm();
+            showLoad(true);
+            await apiCall('ajukanTerminasi', { id: termId, alasan: r.value, bast_terminasi_url: bastUrl });
+            refreshData();
+        }
 
         const getBase64 = file => new Promise((resolve, reject) => { const r = new FileReader(); r.readAsDataURL(file); r.onload = () => resolve(r.result.split(',')[1]); r.onerror = e => reject(e); });
 
@@ -6669,7 +7227,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             let dokChecks = []; document.querySelectorAll('.chk-dok:checked').forEach(cb => dokChecks.push(cb.value));
             let checks = []; document.querySelectorAll('.chk-asesmen:checked').forEach(cb => checks.push(cb.value));
             const data = {
-                id: currentPMId, nama: el('as-nama').value, lokasi_penempatan: el('as-lokasi').value, nik_pm: el('as-nik').value, no_kk: el('as-kk').value, tmp_lahir: el('as-tmp').value, tgl_lahir: el('as-tgl').value, jk: el('as-jk').value, agama: el('as-agama').value, telp: el('as-telp').value,
+                id: currentPMId, nama: el('as-nama').value, lokasi_penempatan: (el('as-lokasi') && el('as-lokasi').value) ? el('as-lokasi').value : 'Belum Ditentukan', nik_pm: el('as-nik').value, no_kk: el('as-kk').value, tmp_lahir: el('as-tmp').value, tgl_lahir: el('as-tgl').value, jk: el('as-jk').value, agama: el('as-agama').value, telp: el('as-telp').value,
                 kewarganegaraan: el('as-warga').value, pendidikan: el('as-pendidikan').value, pekerjaan: el('as-pekerjaan').value, status_kawin: el('as-kawin').value, desil: el('as-desil').value, asal_rujukan: el('as-rujukan').value, bpjs: el('as-bpjs').value,
                 kluster: el('as-kluster').value, ragam: el('as-ragam').value,
                 dom_prov: getText('dom-prov'), dom_kab: getText('dom-kab'), dom_kec: getText('dom-kec'), dom_kel: getText('dom-kel'), dom_jalan: el('dom-jalan').value,
@@ -6761,6 +7319,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             const pm = allPM.find(p => p.id === id);
             if (pm) el('header-pm-name-jurnal').innerText = `PM: ${pm.nama} (${pm.id})`;
             el('jr-so').value = ''; el('jr-ap').value = ''; el('jr-cat').value = '';
+            if (el('jr-dokumen')) el('jr-dokumen').value = '';
 
             // Reset Health Form Fields
             const resetIds = ['nk-tgl-luka', 'nk-catat-luka', 'nk-tgl-faskes1', 'nk-tgl-obat-habis', 'nk-interval-obat', 'nk-nama-obat', 'nk-tgl-kronis', 'nk-catat-kronis', 'nk-rujukan-tujuan', 'nk-rujukan-tgl', 'nk-tgl-lab', 'nk-eval-lab', 'nk-tgl-psi', 'nk-tgl-psi-next', 'nk-catat-psi', 'nk-tgl-terapi', 'nk-tgl-terapi-next', 'nk-eval-terapi'];
@@ -6812,7 +7371,22 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 const pmPeksos = pm?.pj || '-';
                 const pmCaregiver = pm?.caregiver || '-';
 
-                await apiCall('simpanJurnal', { id: currentPMId, nama: pmNama, role: currentUser.role, petugas: currentUser.name, kondisi: el('jr-so').value, intervensi: el('jr-ap').value, catatan: el('jr-cat').value });
+                const dokUrl = el('jr-dokumen')?.value?.trim() || '';
+                let finalCatatan = el('jr-cat').value || '';
+                if (dokUrl) {
+                    finalCatatan = finalCatatan ? `${finalCatatan} | Dokumentasi: ${dokUrl}` : `Dokumentasi: ${dokUrl}`;
+                }
+
+                await apiCall('simpanJurnal', {
+                    id: currentPMId,
+                    nama: pmNama,
+                    role: currentUser.role,
+                    petugas: currentUser.name,
+                    kondisi: el('jr-so').value,
+                    intervensi: el('jr-ap').value,
+                    catatan: finalCatatan,
+                    dokumen_url: dokUrl
+                });
 
                 // SIMPAN NOTIFIKASI KESEHATAN JIKA ADA INPUT MEDIS/KESEHATAN
                 const r = currentUser.role.toLowerCase();
@@ -7516,7 +8090,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         function logout() { location.reload(); }
         function gantiRole() { if (currentUser.raw) renderRoleSelect(currentUser.raw); }
         function switchPimTab(t) {
-            ['tugas', 'approval', 'monitor', 'stats', 'wisma'].forEach(x => {
+            ['tugas', 'caregiver', 'approval', 'monitor', 'stats', 'wisma'].forEach(x => {
                 const content = el(`pim-content-${x}`);
                 const tabBtn = el(`pim-tab-${x}`);
                 if (content) content.classList.add('hidden');
@@ -7527,8 +8101,295 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             if (targetContent) targetContent.classList.remove('hidden');
             if (targetTab) targetTab.classList.add('active-tab');
 
+            if (t === 'caregiver') renderPimpinanCaregiver();
             if (t === 'stats') renderStats();
             if (t === 'wisma') renderWismaOccupancyDashboard();
+        }
+
+        // =========================================================================
+        // MANAJEMEN PENUGASAN CAREGIVER BERDASARKAN KLASTER (ROLE PIMPINAN)
+        // =========================================================================
+
+        const MASTER_KLASTER_LIST = [
+            { name: 'Penyandang Disabilitas', short: 'Disabilitas', icon: 'accessible', color: 'indigo', desc: 'Fisik, Intelektual, Mental, Netra, Rungu, Wicara, Ganda' },
+            { name: 'Anak', short: 'Anak', icon: 'child_care', color: 'sky', desc: 'ABH, Anak Terlantar, Disabilitas Anak, dsb' },
+            { name: 'Kelompok Rentan', short: 'Kelompok Rentan', icon: 'people_alt', color: 'amber', desc: 'Tuna Susila, Gelandangan, Korban Kekerasan' },
+            { name: 'Lansia', short: 'Lansia', icon: 'elderly', color: 'emerald', desc: 'Lanjut Usia Terlantar / Non-Potensial' },
+            { name: 'KPN ODH', short: 'KPN ODH', icon: 'healing', color: 'rose', desc: 'Korban Penyalahgunaan Napza & ODHIV' }
+        ];
+
+        async function renderPimpinanCaregiver() {
+            try {
+                // 1. Render Kartu Ringkasan per Klaster
+                const cardsContainer = el('pim-cg-klaster-cards');
+                if (cardsContainer) {
+                    let cHtml = '';
+                    MASTER_KLASTER_LIST.forEach(kl => {
+                        const activePms = (allPM || []).filter(p => p.status === 'Aktif' && (p.kluster || '').toLowerCase().trim() === kl.name.toLowerCase().trim());
+                        const cgs = getCaregiversForKlaster(kl.name);
+                        const hasCg = cgs.length > 0;
+
+                        let cgBadgeHtml = '';
+                        if (hasCg) {
+                            cgBadgeHtml = cgs.map(c => `
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-white text-teal-800 border border-teal-200 shadow-2xs">
+                                    <span class="material-icons text-[10px] text-teal-600">person</span>
+                                    <span>${c}</span>
+                                </span>
+                            `).join('');
+                        } else {
+                            cgBadgeHtml = `
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                    <span class="material-icons text-[10px] text-amber-600">warning</span>
+                                    <span>Belum Ada Caregiver</span>
+                                </span>
+                            `;
+                        }
+
+                        cHtml += `
+                            <div class="bg-white rounded-xl p-4 border border-gray-200 hover:border-teal-400 transition shadow-2xs flex flex-col justify-between">
+                                <div>
+                                    <div class="flex items-center justify-between gap-1 mb-2">
+                                        <span class="p-1.5 rounded-lg bg-${kl.color}-50 text-${kl.color}-700">
+                                            <span class="material-icons text-lg">${kl.icon}</span>
+                                        </span>
+                                        <span class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                            ${kl.short}
+                                        </span>
+                                    </div>
+                                    <h6 class="font-extrabold text-xs text-slate-800 leading-tight">${kl.name}</h6>
+                                    <p class="text-[10px] text-slate-400 mt-0.5 line-clamp-1" title="${kl.desc}">${kl.desc}</p>
+                                    
+                                    <div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
+                                        <span class="text-slate-500 text-[11px]">PM Aktif:</span>
+                                        <b class="text-teal-700 font-black text-sm">${activePms.length}</b>
+                                    </div>
+
+                                    <div class="mt-2.5">
+                                        <span class="text-[10px] font-bold uppercase text-slate-400 block mb-1">Petugas Bertugas:</span>
+                                        <div class="flex flex-wrap gap-1">
+                                            ${cgBadgeHtml}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button onclick="openModalAturCaregiverForKlaster('${kl.name}')" class="mt-3.5 w-full py-1.5 px-2 bg-slate-50 hover:bg-teal-50 hover:text-teal-800 border border-slate-200 hover:border-teal-300 rounded-lg text-[11px] font-bold text-slate-700 transition flex items-center justify-center gap-1 active:scale-95 cursor-pointer">
+                                    <span class="material-icons text-[12px]">add_circle</span>
+                                    <span>Atur Caregiver</span>
+                                </button>
+                            </div>
+                        `;
+                    });
+                    cardsContainer.innerHTML = cHtml;
+                }
+
+                // 2. Render Tabel Akun Caregiver & Klaster Penempatan
+                const cgAccounts = await dbGetCaregiverAccountsDetailed();
+                const totalCgCount = cgAccounts.length;
+                let assignedCount = 0;
+
+                let tHtml = `<thead><tr><th class="${thClass} w-10">No</th><th class="${thClass}">Nama Caregiver</th><th class="${thClass}">Username</th><th class="${thClass}">Klaster Penugasan</th><th class="${thClass}">PM Dilayani</th><th class="${thClass}">Status Tugas</th><th class="${thClass}">Aksi</th></tr></thead><tbody>`;
+
+                if (totalCgCount === 0) {
+                    tHtml += `<tr><td colspan="7" class="p-8 text-center bg-gray-50"><div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 text-slate-500 mb-2"><span class="material-icons text-xl">group_off</span></div><p class="font-bold text-gray-700 text-sm">Belum Ada Akun dengan Role Caregiver</p><p class="text-xs text-gray-500 mt-1">Tambahkan akun Caregiver terlebih dahulu pada menu <b>Kelola Pengguna (Role Admin)</b>.</p></td></tr>`;
+                } else {
+                    cgAccounts.forEach((cg, idx) => {
+                        const assignedKlasters = getKlastersForCaregiver(cg.nama);
+                        if (assignedKlasters.length > 0) assignedCount++;
+
+                        let klasterBadgeHtml = '';
+                        if (assignedKlasters.length > 0) {
+                            klasterBadgeHtml = assignedKlasters.map(k => `
+                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-50 text-teal-900 border border-teal-200 shadow-2xs">
+                                    <span class="material-icons text-[11px] text-teal-600">domain</span>
+                                    <span>${k}</span>
+                                </span>
+                            `).join('');
+                        } else {
+                            klasterBadgeHtml = `<span class="text-xs text-gray-400 italic flex items-center gap-1"><span class="material-icons text-xs text-amber-500">warning</span> Belum Ditempatkan</span>`;
+                        }
+
+                        // Hitung jumlah PM aktif di klaster yang diampu caregiver ini
+                        const pmsCovered = (allPM || []).filter(p => {
+                            if (p.status !== 'Aktif') return false;
+                            const pKluster = (p.kluster || '').toLowerCase().trim();
+                            return assignedKlasters.some(k => k.toLowerCase().trim() === pKluster);
+                        });
+
+                        const statusBadge = assignedKlasters.length > 0
+                            ? '<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 w-max"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>Aktif Bertugas</span>'
+                            : '<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1 w-max"><span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span>Belum Ada Klaster</span>';
+
+                        tHtml += `
+                            <tr>
+                                <td class="${tdClass} text-center font-bold text-gray-400">${idx + 1}</td>
+                                <td class="${tdClass} font-extrabold text-slate-800">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-8 h-8 rounded-full bg-teal-100 text-teal-800 font-black flex items-center justify-center text-xs shrink-0">
+                                            ${(cg.nama || 'C').substring(0, 2).toUpperCase()}
+                                        </span>
+                                        <span>${cg.nama}</span>
+                                    </div>
+                                </td>
+                                <td class="${tdClass} text-slate-500 font-mono text-xs">@${cg.username || '-'}</td>
+                                <td class="${tdClass}"><div class="flex flex-wrap gap-1 max-w-xs">${klasterBadgeHtml}</div></td>
+                                <td class="${tdClass} font-bold text-teal-700 text-center">${pmsCovered.length} PM</td>
+                                <td class="${tdClass}">${statusBadge}</td>
+                                <td class="${tdClass}">
+                                    <div class="flex items-center gap-1.5">
+                                        <button onclick="openModalAturCaregiver('${cg.nama}')" class="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1 active:scale-95 cursor-pointer" title="Atur / Ubah Klaster Penugasan">
+                                            <span class="material-icons text-[13px]">edit</span>
+                                            <span>Atur Klaster</span>
+                                        </button>
+                                        ${assignedKlasters.length > 0 ? `
+                                            <button onclick="hapusPenugasanCaregiverPrompt('${cg.nama}')" class="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition cursor-pointer" title="Hapus seluruh penugasan klaster untuk caregiver ini">
+                                                <span class="material-icons text-base">delete_outline</span>
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                }
+
+                el('tbl-pimpinan-caregiver').innerHTML = tHtml + '</tbody>';
+
+                const badgeCnt = el('cg-assigned-count-badge');
+                if (badgeCnt) {
+                    badgeCnt.innerHTML = `<b>${assignedCount}</b> dari <b>${totalCgCount}</b> Caregiver Telah Ditempatkan`;
+                }
+
+            } catch (err) {
+                console.error("renderPimpinanCaregiver error:", err);
+            }
+        }
+
+        async function openModalAturCaregiver(caregiverNama = '') {
+            try {
+                const sel = el('modal-cg-select');
+                if (!sel) return;
+
+                const cgAccounts = await dbGetCaregiverAccountsDetailed();
+                let opts = '<option value="">-- Pilih Caregiver --</option>';
+                cgAccounts.forEach(c => {
+                    const isSelected = (c.nama === caregiverNama) ? 'selected' : '';
+                    opts += `<option value="${c.nama}" data-username="${c.username || ''}" data-id="${c.id || ''}" ${isSelected}>${c.nama} (@${c.username || '-'})</option>`;
+                });
+                sel.innerHTML = opts;
+
+                if (caregiverNama) {
+                    sel.value = caregiverNama;
+                    onModalCaregiverChange();
+                } else {
+                    document.querySelectorAll('input[name="cg-klaster-opt"]').forEach(cb => cb.checked = false);
+                    el('modal-cg-keterangan').value = '';
+                }
+
+                el('modal-penugasan-caregiver').classList.remove('hidden');
+            } catch (e) {
+                console.error("openModalAturCaregiver error:", e);
+                myAlert("Gagal membuka modal penugasan caregiver: " + e.message);
+            }
+        }
+
+        function closeModalPenugasanCaregiver() {
+            const m = el('modal-penugasan-caregiver');
+            if (m) m.classList.add('hidden');
+        }
+
+        function onModalCaregiverChange() {
+            const sel = el('modal-cg-select');
+            const cgNama = sel ? sel.value : '';
+            if (!cgNama) {
+                document.querySelectorAll('input[name="cg-klaster-opt"]').forEach(cb => cb.checked = false);
+                el('modal-cg-keterangan').value = '';
+                return;
+            }
+
+            const assignedKlasters = getKlastersForCaregiver(cgNama);
+            document.querySelectorAll('input[name="cg-klaster-opt"]').forEach(cb => {
+                cb.checked = assignedKlasters.some(k => k.toLowerCase().trim() === cb.value.toLowerCase().trim());
+            });
+
+            const rec = (allPenugasanCaregiver || []).find(item => (item.nama_caregiver || '').toLowerCase().trim() === cgNama.toLowerCase().trim());
+            el('modal-cg-keterangan').value = rec?.keterangan || '';
+        }
+
+        function openModalAturCaregiverForKlaster(klasterName) {
+            openModalAturCaregiver();
+            setTimeout(() => {
+                document.querySelectorAll('input[name="cg-klaster-opt"]').forEach(cb => {
+                    if (cb.value.toLowerCase().trim() === String(klasterName).toLowerCase().trim()) {
+                        cb.checked = true;
+                    }
+                });
+            }, 60);
+        }
+
+        async function submitPenugasanCaregiverModal() {
+            const sel = el('modal-cg-select');
+            const cgNama = sel ? sel.value : '';
+            if (!cgNama) return myAlert("Pilih Caregiver terlebih dahulu!");
+
+            const selectedOption = sel.options[sel.selectedIndex];
+            const cgUsername = selectedOption ? selectedOption.getAttribute('data-username') : '';
+            const cgId = selectedOption ? selectedOption.getAttribute('data-id') : '';
+
+            const checkedKlasters = [];
+            document.querySelectorAll('input[name="cg-klaster-opt"]:checked').forEach(cb => {
+                checkedKlasters.push(cb.value);
+            });
+
+            if (checkedKlasters.length === 0) {
+                const conf = confirm(`Anda tidak mencentang klaster apapun untuk ${cgNama}. Apakah Anda ingin mengosongkan/mencabut seluruh penugasan klaster untuk caregiver ini?`);
+                if (!conf) return;
+                await dbHapusPenugasanCaregiver(cgNama);
+                closeModalPenugasanCaregiver();
+                await myAlert(`Penugasan klaster untuk ${cgNama} telah dikosongkan.`);
+                renderPimpinanCaregiver();
+                return;
+            }
+
+            const ket = el('modal-cg-keterangan').value || '';
+
+            showLoad(true);
+            try {
+                await apiCall('simpanPenugasanCaregiver', {
+                    id_caregiver: cgId,
+                    nama_caregiver: cgNama,
+                    username_caregiver: cgUsername,
+                    klasters: checkedKlasters,
+                    keterangan: ket
+                });
+
+                closeModalPenugasanCaregiver();
+                await myAlert(`Penugasan Klaster Berhasil Disimpan!\nCaregiver: ${cgNama}\nKlaster Tugas: ${checkedKlasters.join(', ')}`);
+                renderPimpinanCaregiver();
+            } catch (err) {
+                console.error("submitPenugasanCaregiverModal error:", err);
+                myAlert("Gagal menyimpan penugasan caregiver: " + err.message);
+            } finally {
+                showLoad(false);
+            }
+        }
+
+        async function hapusPenugasanCaregiverPrompt(caregiverNama) {
+            if (!caregiverNama) return;
+            const conf = confirm(`Apakah Anda yakin ingin mencabut penugasan klaster untuk Caregiver: ${caregiverNama}?`);
+            if (!conf) return;
+
+            showLoad(true);
+            try {
+                await apiCall('hapusPenugasanCaregiver', { nama_caregiver: caregiverNama });
+                await myAlert(`Penugasan klaster untuk ${caregiverNama} berhasil dicabut.`);
+                renderPimpinanCaregiver();
+            } catch (err) {
+                console.error("hapusPenugasanCaregiverPrompt error:", err);
+                myAlert("Gagal mencabut penugasan: " + err.message);
+            } finally {
+                showLoad(false);
+            }
         }
 
         // --- WISMA MANAGEMENT & OCCUPANCY DASHBOARD LOGIC ---
@@ -8890,8 +9751,8 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             const stats = getWismaOccupancyStats();
             const wismaList = allWisma || [];
 
-            let html = '<option value="">- Pilih Wisma Penempatan -</option>';
-            html += '<option value="Belum Ditentukan" ' + (selectedVal === 'Belum Ditentukan' || !selectedVal ? 'selected' : '') + '>Belum Ditentukan</option>';
+            let html = '<option value="">- Pilih Wisma Penempatan (Opsional) -</option>';
+            html += '<option value="Belum Ditentukan" ' + (selectedVal === 'Belum Ditentukan' || !selectedVal ? 'selected' : '') + '>Belum Ditentukan (Default)</option>';
 
             ['PL1', 'PL2', 'PL3'].forEach(pl => {
                 const plItems = wismaList.filter(w => (w.wilayah || 'PL1').toUpperCase() === pl);
