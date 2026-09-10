@@ -1623,13 +1623,14 @@
             const kondisiStr = d.kondisi || `[PENYULUHAN KELOMPOK: ${d.topik || 'Bimbingan Sosial'}] (S): ${d.subjektif || '-'} | (O): ${d.objektif || '-'}`;
             const intervensiStr = d.intervensi || `(A): ${d.analisis || '-'} | (P): ${d.rencana || '-'}`;
 
+            const docUrl = d.dokumen_url || d.fotoUrl || '';
             let catatanLengkap = `Sesi: Penyuluhan Kelompok / Komunitas. Topik: ${d.topik || '-'}. Tempat: ${d.lokasi || 'Sentra Terpadu Pangudi Luhur Bekasi'}. Total Hadir: ${pmList.length} PM (${pesertaNamas}).`;
             if (d.catatan) catatanLengkap += ` | Catatan: ${d.catatan}`;
-            if (d.fotoUrl) catatanLengkap += ` | Dokumentasi: ${d.fotoUrl}`;
+            if (docUrl && !catatanLengkap.includes(docUrl)) catatanLengkap += ` | Dokumentasi: ${docUrl}`;
 
             const payloads = pmList.map((item, idx) => {
                 const idLog = 'JRN-BLAST-' + Date.now() + '-' + idx + '-' + Math.random().toString(36).substring(2, 7);
-                return {
+                const row = {
                     id_log: idLog,
                     timestamp: timestampIso,
                     id_pm: item.id,
@@ -1640,12 +1641,30 @@
                     intervensi: intervensiStr,
                     catatan: catatanLengkap
                 };
+                if (docUrl) {
+                    row.dokumen_url = docUrl;
+                }
+                return row;
             });
 
-            const { error } = await client.from('jurnal_layanan').insert(payloads);
+            let { error } = await client.from('jurnal_layanan').insert(payloads);
             if (error) {
-                console.error("Supabase insert blasting jurnal_layanan error:", error);
-                throw error;
+                if (docUrl) {
+                    // Fallback jika kolom dokumen_url belum tersedia di Supabase
+                    const fallbackPayloads = payloads.map(p => {
+                        const copy = { ...p };
+                        delete copy.dokumen_url;
+                        return copy;
+                    });
+                    const { error: errRetry } = await client.from('jurnal_layanan').insert(fallbackPayloads);
+                    if (errRetry) {
+                        console.error("Supabase insert blasting retry error:", errRetry);
+                        throw errRetry;
+                    }
+                } else {
+                    console.error("Supabase insert blasting jurnal_layanan error:", error);
+                    throw error;
+                }
             }
 
             return {
@@ -2920,6 +2939,19 @@
                                 class="input-field bg-white text-xs"></textarea>
                         </div>
                     </div>
+                </div>
+
+                <!-- LINK DOKUMENTASI KEGIATAN (OPSIONAL) -->
+                <div>
+                    <label class="lbl flex items-center justify-between">
+                        <span class="flex items-center gap-1">
+                            <span class="material-icons text-sm text-teal-600">link</span> Link Dokumentasi Kegiatan / Foto
+                        </span>
+                        <span class="text-[10px] text-gray-400 font-normal">Opsional (Google Drive / Cloud URL)</span>
+                    </label>
+                    <input type="url" id="pgrup-dokumen"
+                        placeholder="https://drive.google.com/... atau tautan foto dokumentasi kegiatan bimbingan kelompok"
+                        class="input-field text-xs bg-slate-50 focus:bg-white border-teal-200">
                 </div>
 
                 <!-- PANEL MULTI-TAG PM CHECKLIST -->
@@ -9143,6 +9175,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             el('pgrup-analisis').value = '';
             el('pgrup-rencana').value = '';
             el('pgrup-search-pm').value = '';
+            if (el('pgrup-dokumen')) el('pgrup-dokumen').value = '';
 
             const activePMs = allPM.filter(p => p.status === 'Aktif');
             let cHtml = '';
@@ -9195,6 +9228,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             const obj = el('pgrup-objektif').value.trim();
             const ana = el('pgrup-analisis').value.trim();
             const ren = el('pgrup-rencana').value.trim();
+            const dokUrl = el('pgrup-dokumen')?.value?.trim() || '';
 
             const checkedBoxes = document.querySelectorAll('input[name="chk-blasting-pm"]:checked');
             const targetPmIds = Array.from(checkedBoxes).map(c => c.value);
@@ -9225,7 +9259,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                     targetPmIds,
                     listPm,
                     petugas: currentUser.name || 'Penyuluh Sosial',
-                    role: 'Penyuluh Sosial'
+                    role: 'Penyuluh Sosial',
+                    dokumen_url: dokUrl,
+                    fotoUrl: dokUrl
                 };
 
                 const res = await apiCall('blastingPenyuluhan', payload);
