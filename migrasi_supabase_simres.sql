@@ -182,6 +182,41 @@ ALTER TABLE IF EXISTS public.arsip_alumni
 ALTER TABLE IF EXISTS public.jurnal_layanan 
     ADD COLUMN IF NOT EXISTS dokumen_url TEXT;
 
+-- -------------------------------------------------------------------------
+-- 9. TABEL MASTER_WISMA (Area PL1, PL2, PL3, Rusun & Jenis Barak, Paviliun, Rumah Susun)
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.master_wisma (
+    id TEXT PRIMARY KEY,
+    wilayah TEXT NOT NULL DEFAULT 'PL1',
+    nama_wisma TEXT NOT NULL,
+    jenis_wisma TEXT NOT NULL DEFAULT 'Barak',
+    nama_ruang TEXT,
+    kapasitas INTEGER DEFAULT 1,
+    keterangan TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Pastikan semua kolom tersedia jika tabel master_wisma sudah pernah dibuat
+ALTER TABLE IF EXISTS public.master_wisma
+    ADD COLUMN IF NOT EXISTS wilayah TEXT DEFAULT 'PL1',
+    ADD COLUMN IF NOT EXISTS nama_wisma TEXT,
+    ADD COLUMN IF NOT EXISTS jenis_wisma TEXT DEFAULT 'Barak',
+    ADD COLUMN IF NOT EXISTS nama_ruang TEXT,
+    ADD COLUMN IF NOT EXISTS kapasitas INTEGER DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS keterangan TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE public.master_wisma ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public all master_wisma') THEN
+        CREATE POLICY "Allow public all master_wisma" ON public.master_wisma FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+END $$;
+
 -- =========================================================================
 -- SELESAI: Seluruh tabel & kolom pendukung SIMRES siap digunakan 100%!
 -- =========================================================================

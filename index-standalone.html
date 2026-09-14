@@ -1619,13 +1619,14 @@
                 }
             }
 
-            const pesertaNamas = pmList.map(p => p.nama).join(', ');
-            const kondisiStr = d.kondisi || `[PENYULUHAN KELOMPOK: ${d.topik || 'Bimbingan Sosial'}] (S): ${d.subjektif || '-'} | (O): ${d.objektif || '-'}`;
+            const roleStr = d.role || (typeof currentUser !== 'undefined' && currentUser ? currentUser.role : 'Penyuluh Sosial');
+            const petugasStr = d.petugas || (typeof currentUser !== 'undefined' && currentUser ? currentUser.name : roleStr);
+            const kondisiStr = d.kondisi || `[${roleStr.toUpperCase()}: ${d.topik || 'Bimbingan/Kegiatan'}] (S): ${d.subjektif || '-'} | (O): ${d.objektif || '-'}`;
             const intervensiStr = d.intervensi || `(A): ${d.analisis || '-'} | (P): ${d.rencana || '-'}`;
 
             const docUrl = d.dokumen_url || d.fotoUrl || '';
-            let catatanLengkap = `Sesi: Penyuluhan Kelompok / Komunitas. Topik: ${d.topik || '-'}. Tempat: ${d.lokasi || 'Sentra Terpadu Pangudi Luhur Bekasi'}. Total Hadir: ${pmList.length} PM (${pesertaNamas}).`;
-            if (d.catatan) catatanLengkap += ` | Catatan: ${d.catatan}`;
+            let catatanLengkap = d.catatan || `Sesi: ${d.topik || '-'}. Tempat: ${d.lokasi || 'Sentra Terpadu Pangudi Luhur Bekasi'}. Total Hadir: ${pmList.length} PM (${pesertaNamas}).`;
+            if (d.catatan && !catatanLengkap.includes(d.catatan)) catatanLengkap += ` | Catatan: ${d.catatan}`;
             if (docUrl && !catatanLengkap.includes(docUrl)) catatanLengkap += ` | Dokumentasi: ${docUrl}`;
 
             const payloads = pmList.map((item, idx) => {
@@ -1635,8 +1636,8 @@
                     timestamp: timestampIso,
                     id_pm: item.id,
                     nama_pm: item.nama,
-                    role: 'Penyuluh Sosial',
-                    petugas: d.petugas || currentUser.name || 'Penyuluh Sosial',
+                    role: roleStr,
+                    petugas: petugasStr,
                     kondisi: kondisiStr,
                     intervensi: intervensiStr,
                     catatan: catatanLengkap
@@ -2995,6 +2996,304 @@
         </div>
     </div>
 
+    <!-- MODAL BLASTING JURNAL INSTRUKTUR (PELATIHAN VOKASIONAL KELOMPOK) -->
+    <div id="modal-blasting-instruktur"
+        class="fixed inset-0 bg-black/60 z-[65] hidden flex items-center justify-center p-4 backdrop-blur-xs">
+        <div
+            class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-3xl animate-[fadeIn_0.2s_ease-out] border border-amber-200 max-h-[92vh] overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-amber-100 pb-3 mb-4">
+                <div class="flex items-center gap-3">
+                    <span
+                        class="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-2xl material-icons text-2xl shadow-md">handyman</span>
+                    <div>
+                        <h3 class="text-lg font-black text-amber-950">Pelatihan Vokasional / Keterampilan (Blasting Jurnal)</h3>
+                        <p class="text-xs text-amber-800">Isi materi bimbingan vokasional 1 kali, otomatis blasting masuk ke jurnal pelayanan seluruh PM yang mengikuti pelatihan.</p>
+                    </div>
+                </div>
+                <button onclick="closeModalBlastingInstruktur()" class="text-gray-400 hover:text-gray-600">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <div class="space-y-4 text-xs">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="lbl">Tanggal & Waktu Pelatihan *</label>
+                        <input type="datetime-local" id="iblast-tgl"
+                            class="input-field bg-slate-50 font-bold text-amber-950 border-amber-200">
+                    </div>
+                    <div>
+                        <label class="lbl">Program Vokasional *</label>
+                        <select id="iblast-vokasi" onchange="onInstrukturVokasiChange()"
+                            class="input-field bg-white font-bold text-gray-800 border-amber-200">
+                            <!-- Populated dynamically via JS -->
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="lbl">Topik / Materi Pelatihan Vokasi *</label>
+                        <input type="text" id="iblast-topik"
+                            placeholder="Contoh: Praktik Sablon Dasar Kaos, Pengenalan Mesin Jahit, Racik Kopi Espresso"
+                            class="input-field bg-white font-bold border-amber-200">
+                    </div>
+                    <div>
+                        <label class="lbl">Lokasi / Tempat Praktik</label>
+                        <input type="text" id="iblast-lokasi" value="Bengkel / Ruang Vokasi STPL Bekasi"
+                            placeholder="Contoh: Bengkel Otomotif, Ruang Tata Boga, Kebun Hidroponik"
+                            class="input-field bg-slate-50 border-amber-200">
+                    </div>
+                </div>
+
+                <!-- FORMAT SOAP CATATAN VOKASIONAL -->
+                <div class="bg-amber-50/70 p-4 rounded-xl border border-amber-200 space-y-3">
+                    <span
+                        class="font-extrabold text-amber-950 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                        <span class="material-icons text-sm text-amber-700">edit_note</span> Uraian Perkembangan Pelatihan (SOAP Vokasional)
+                    </span>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="lbl text-[11px]">Subjektif (S) - Respon & Kesiapan PM</label>
+                            <textarea id="iblast-subjektif" rows="2"
+                                placeholder="Kesiapan fisik/mental peserta, antusiasme, kendala yang diungkapkan..."
+                                class="input-field bg-white text-xs border-amber-200"></textarea>
+                        </div>
+                        <div>
+                            <label class="lbl text-[11px]">Objektif (O) - Observasi Praktik & Penguasaan Alat</label>
+                            <textarea id="iblast-objektif" rows="2"
+                                placeholder="Pengoperasian mesin/alat kerja, ketelitian, kerapian, penerapan K3..."
+                                class="input-field bg-white text-xs border-amber-200"></textarea>
+                        </div>
+                        <div>
+                            <label class="lbl text-[11px]">Analisis (A) - Evaluasi Kemandirian Keterampilan</label>
+                            <textarea id="iblast-analisis" rows="2"
+                                placeholder="Tingkat daya tangkap, motorik, ketepatan teknik, kemandirian kerja..."
+                                class="input-field bg-white text-xs border-amber-200"></textarea>
+                        </div>
+                        <div>
+                            <label class="lbl text-[11px]">Perencanaan (P) - Rencana Tindak Lanjut / Modul Berikutnya</label>
+                            <textarea id="iblast-rencana" rows="2"
+                                placeholder="Materi lanjutan, tugas mandiri, perbaikan teknik, finishing produk..."
+                                class="input-field bg-white text-xs border-amber-200"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LINK DOKUMENTASI KEGIATAN -->
+                <div>
+                    <label class="lbl flex items-center justify-between">
+                        <span class="flex items-center gap-1">
+                            <span class="material-icons text-sm text-amber-600">link</span> Link Dokumentasi Foto / Kegiatan Pelatihan
+                        </span>
+                        <span class="text-[10px] text-gray-400 font-normal">Opsional (Google Drive / Cloud URL)</span>
+                    </label>
+                    <input type="url" id="iblast-dokumen"
+                        placeholder="https://drive.google.com/... tautan foto / dokumen hasil karya pelatihan"
+                        class="input-field text-xs bg-slate-50 focus:bg-white border-amber-200">
+                </div>
+
+                <!-- PANEL MULTI-TAG PM CHECKLIST KHUSUS VOKASI -->
+                <div class="border border-amber-200 rounded-xl p-4 bg-white shadow-xs">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
+                        <div>
+                            <span class="font-bold text-gray-900 text-xs flex items-center gap-1">
+                                <span class="material-icons text-amber-600 text-sm">checklist</span> Pilih Penerima Manfaat yang Mengikuti Sesi:
+                            </span>
+                            <span id="iblast-selected-count" class="text-[11px] font-extrabold text-amber-700">0 PM Dipilih</span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <input type="text" id="iblast-search-pm" oninput="filterBlastingInstrukturPMList()"
+                                placeholder="Cari nama PM..."
+                                class="px-2 py-1 text-xs border border-amber-200 rounded-lg outline-none w-36">
+                            <button type="button" onclick="selectPMByVokasi()"
+                                class="bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                                title="Pilih otomatis PM yang terdaftar pada program vokasi ini">
+                                <span class="material-icons text-[12px]">auto_awesome</span> Pilih Sesuai Vokasi
+                            </button>
+                            <button type="button" onclick="toggleSelectAllInstrukturBlast(true)"
+                                class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded text-[11px] font-bold cursor-pointer">Semua</button>
+                            <button type="button" onclick="toggleSelectAllInstrukturBlast(false)"
+                                class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded text-[11px] font-bold cursor-pointer">Reset</button>
+                        </div>
+                    </div>
+
+                    <div id="iblast-pm-checklist"
+                        class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-56 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-gray-200">
+                        <!-- Populated dynamically via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 flex gap-3">
+                <button onclick="closeModalBlastingInstruktur()"
+                    class="w-1/3 bg-gray-200 text-gray-800 font-bold py-3 rounded-xl hover:bg-gray-300 transition cursor-pointer">Batal</button>
+                <button onclick="executeBlastingInstruktur()"
+                    class="w-2/3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold py-3 rounded-xl shadow-lg transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer">
+                    <span class="material-icons text-base">send</span> BLASTING JURNAL VOKASI KE PM TERPILIH
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL BLASTING JURNAL CAREGIVER (PENDAMPINGAN KLASTER KELOMPOK) -->
+    <div id="modal-blasting-caregiver"
+        class="fixed inset-0 bg-black/60 z-[65] hidden flex items-center justify-center p-4 backdrop-blur-xs">
+        <div
+            class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-3xl animate-[fadeIn_0.2s_ease-out] border border-teal-200 max-h-[92vh] overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-teal-100 pb-3 mb-4">
+                <div class="flex items-center gap-3">
+                    <span
+                        class="p-2.5 bg-gradient-to-br from-teal-600 to-emerald-600 text-white rounded-2xl material-icons text-2xl shadow-md">health_and_safety</span>
+                    <div>
+                        <h3 class="text-lg font-black text-teal-950">Pendampingan Klaster / Wisma (Blasting Jurnal Caregiver)</h3>
+                        <p class="text-xs text-teal-700">Input 1 kali catatan pengasuhan kelompok atau aktivitas harian bersama, otomatis blasting masuk ke jurnal pelayanan PM binaan.</p>
+                    </div>
+                </div>
+                <button onclick="closeModalBlastingCaregiver()" class="text-gray-400 hover:text-gray-600">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <div class="space-y-4 text-xs">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="lbl">Tanggal & Waktu Sesi *</label>
+                        <input type="datetime-local" id="cgblast-tgl"
+                            class="input-field bg-slate-50 font-bold text-teal-950 border-teal-200">
+                    </div>
+                    <div>
+                        <label class="lbl">Bentuk / Jenis Kegiatan Pendampingan *</label>
+                        <input type="text" id="cgblast-kegiatan" list="cgblast-kegiatan-list"
+                            placeholder="Pilih preset di bawah atau ketik kegiatan..."
+                            class="input-field bg-white font-bold border-teal-200 text-teal-900">
+                        <datalist id="cgblast-kegiatan-list">
+                            <option value="Senam Pagi & Kebugaran Jasmani">
+                            <option value="Bimbingan Kebersihan Diri & Asrama (ADL)">
+                            <option value="Bimbingan Ibadah & Kerohanian Bersama">
+                            <option value="Makan Bersama & Pemantauan Nutrisi">
+                            <option value="Dinamika Kelompok Wisma & Rekreasi Sore">
+                            <option value="Pengkondisian Istirahat Malam & Kamar">
+                        </datalist>
+                    </div>
+                </div>
+
+                <!-- PRESET CEPAT KEGIATAN CAREGIVER -->
+                <div class="flex flex-wrap gap-1.5 items-center">
+                    <span class="text-[11px] font-bold text-teal-800">Preset Cepat:</span>
+                    <button type="button" onclick="setCGKegiatanPreset('Senam Pagi & Kebugaran Jasmani', 'Lapangan Olahraga STPL Bekasi')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🏃 Senam Pagi</button>
+                    <button type="button" onclick="setCGKegiatanPreset('Bimbingan Kebersihan Diri & Asrama (ADL)', 'Wisma / Asrama Klaster')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🧹 Bersih Wisma & ADL</button>
+                    <button type="button" onclick="setCGKegiatanPreset('Bimbingan Ibadah & Kerohanian Bersama', 'Musholla / Ruang Ibadah STPL')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🕌 Ibadah Bersama</button>
+                    <button type="button" onclick="setCGKegiatanPreset('Makan Bersama & Pemantauan Nutrisi', 'Ruang Makan Bersama')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🍽️ Makan Bersama</button>
+                    <button type="button" onclick="setCGKegiatanPreset('Dinamika Kelompok Wisma & Rekreasi Sore', 'Gazebo / Ruang Bersama Wisma')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🎯 Dinamika Sore</button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="lbl">Lokasi / Tempat Kegiatan</label>
+                        <input type="text" id="cgblast-lokasi" value="Wisma / Asrama Klaster STPL Bekasi"
+                            placeholder="Contoh: Asrama Disabilitas, Lapangan, Ruang Makan"
+                            class="input-field bg-slate-50 border-teal-200">
+                    </div>
+                    <div>
+                        <label class="lbl">Catatan Tambahan / Klaster</label>
+                        <input type="text" id="cgblast-catatan"
+                            placeholder="Keterangan tambahan (misal: Sesi bimbingan pagi rutin)"
+                            class="input-field bg-white border-teal-200">
+                    </div>
+                </div>
+
+                <!-- FORMAT SOAP CATATAN CAREGIVER -->
+                <div class="bg-teal-50/70 p-4 rounded-xl border border-teal-200 space-y-3">
+                    <span
+                        class="font-extrabold text-teal-950 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                        <span class="material-icons text-sm text-teal-700">edit_note</span> Uraian Perkembangan Pengasuhan (SOAP Caregiver)
+                    </span>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="lbl text-[11px]">Subjektif (S) - Respon & Kondisi Emosi PM</label>
+                            <textarea id="cgblast-subjektif" rows="2"
+                                placeholder="Keluhan fisik/kesehatan yang disampaikan, suasana hati/mood, keterbukaan..."
+                                class="input-field bg-white text-xs border-teal-200"></textarea>
+                        </div>
+                        <div>
+                            <label class="lbl text-[11px]">Objektif (O) - Observasi ADL & Kebersihan/Kerapian</label>
+                            <textarea id="cgblast-objektif" rows="2"
+                                placeholder="Kemandirian mandi, berpakaian, kerapian tempat tidur, kebersihan kamar..."
+                                class="input-field bg-white text-xs border-teal-200"></textarea>
+                        </div>
+                        <div>
+                            <label class="lbl text-[11px]">Analisis (A) - Evaluasi Adaptasi & Interaksi</label>
+                            <textarea id="cgblast-analisis" rows="2"
+                                placeholder="Tingkat kemandirian ADL, kebugaran fisik, relasi sosial sesama PM di wisma..."
+                                class="input-field bg-white text-xs border-teal-200"></textarea>
+                        </div>
+                        <div>
+                            <label class="lbl text-[11px]">Perencanaan (P) - Rencana Pengasuhan / RTL</label>
+                            <textarea id="cgblast-rencana" rows="2"
+                                placeholder="Pemantauan jadwal istirahat, pengawasan kebersihan berkala, koordinasi..."
+                                class="input-field bg-white text-xs border-teal-200"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LINK DOKUMENTASI KEGIATAN -->
+                <div>
+                    <label class="lbl flex items-center justify-between">
+                        <span class="flex items-center gap-1">
+                            <span class="material-icons text-sm text-teal-600">link</span> Link Dokumentasi Foto / Kegiatan Pendampingan
+                        </span>
+                        <span class="text-[10px] text-gray-400 font-normal">Opsional (Google Drive / Cloud URL)</span>
+                    </label>
+                    <input type="url" id="cgblast-dokumen"
+                        placeholder="https://drive.google.com/... tautan foto kegiatan pendampingan / kebersihan wisma"
+                        class="input-field text-xs bg-slate-50 focus:bg-white border-teal-200">
+                </div>
+
+                <!-- PANEL MULTI-TAG PM CHECKLIST KHUSUS CAREGIVER -->
+                <div class="border border-teal-200 rounded-xl p-4 bg-white shadow-xs">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
+                        <div>
+                            <span class="font-bold text-gray-900 text-xs flex items-center gap-1">
+                                <span class="material-icons text-teal-600 text-sm">checklist</span> Tag Penerima Manfaat yang Didampingi:
+                            </span>
+                            <span id="cgblast-selected-count" class="text-[11px] font-extrabold text-teal-700">0 PM Dipilih</span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div class="flex items-center bg-teal-100/70 p-0.5 rounded-lg border border-teal-200">
+                                <button type="button" id="cgblast-filter-my" onclick="filterCaregiverBlastScope('my')"
+                                    class="px-2.5 py-1 text-[11px] font-bold rounded-md bg-teal-700 text-white transition shadow-2xs cursor-pointer">Klaster Saya</button>
+                                <button type="button" id="cgblast-filter-all" onclick="filterCaregiverBlastScope('all')"
+                                    class="px-2.5 py-1 text-[11px] font-bold rounded-md text-teal-900 hover:bg-teal-200/60 transition cursor-pointer">Semua PM</button>
+                            </div>
+                            <input type="text" id="cgblast-search-pm" oninput="filterBlastingCaregiverPMList()"
+                                placeholder="Cari nama PM..."
+                                class="px-2 py-1 text-xs border border-teal-200 rounded-lg outline-none w-32">
+                            <button type="button" onclick="toggleSelectAllCaregiverBlast(true)"
+                                class="bg-teal-100 hover:bg-teal-200 text-teal-900 px-2 py-1 rounded text-[11px] font-bold cursor-pointer">Pilih Semua</button>
+                            <button type="button" onclick="toggleSelectAllCaregiverBlast(false)"
+                                class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded text-[11px] font-bold cursor-pointer">Reset</button>
+                        </div>
+                    </div>
+
+                    <div id="cgblast-pm-checklist"
+                        class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-56 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-gray-200">
+                        <!-- Populated dynamically via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 flex gap-3">
+                <button onclick="closeModalBlastingCaregiver()"
+                    class="w-1/3 bg-gray-200 text-gray-800 font-bold py-3 rounded-xl hover:bg-gray-300 transition cursor-pointer">Batal</button>
+                <button onclick="executeBlastingCaregiver()"
+                    class="w-2/3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer">
+                    <span class="material-icons text-base">send</span> BLASTING JURNAL CAREGIVER KE PM TERPILIH
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL 5: ALIKAN / GANTI PEKERJA SOSIAL (ROLE PIMPINAN - ZERO DATA LOSS) -->
     <div id="modal-ganti-peksos"
         class="fixed inset-0 bg-black/60 z-[65] hidden flex items-center justify-center p-4 backdrop-blur-xs">
@@ -3153,6 +3452,74 @@
                 <button onclick="submitReasesmen()"
                     class="w-2/3 bg-purple-600 text-white font-bold py-2.5 rounded-xl hover:bg-purple-700 shadow-md transition flex items-center justify-center gap-1 active:scale-95">
                     <span class="material-icons text-sm">save</span> Simpan Re-Asesmen ke Riwayat
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL RIWAYAT NOTIFIKASI KESEHATAN SELESAI (PEKSOS & CAREGIVER) -->
+    <div id="modal-riwayat-notif-selesai"
+        class="fixed inset-0 bg-black/60 z-[70] hidden flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs">
+        <div class="bg-white rounded-2xl shadow-2xl p-5 sm:p-6 w-full max-w-4xl animate-[fadeIn_0.2s_ease-out] border border-gray-100 max-h-[92vh] flex flex-col">
+            <!-- HEADER -->
+            <div class="flex items-center justify-between pb-3.5 border-b border-gray-100 shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs">
+                        <span class="material-icons text-2xl">history</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-base sm:text-lg font-black text-gray-900">Riwayat Notifikasi Selesai</h3>
+                            <span id="modal-riwayat-role-tag" class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 uppercase tracking-wider"></span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-0.5">Daftar tindakan & instruksi medis/kesehatan yang telah ditandai selesai.</p>
+                    </div>
+                </div>
+                <button onclick="closeModalRiwayatNotif()"
+                    class="text-gray-400 hover:text-gray-600 w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition">
+                    <span class="material-icons text-xl">close</span>
+                </button>
+            </div>
+
+            <!-- SEARCH & FILTER TOOLBAR -->
+            <div class="py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0 border-b border-gray-50">
+                <div class="relative flex-1">
+                    <span class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">search</span>
+                    <input type="text" id="filter-riwayat-notif-search" oninput="filterRiwayatNotifList()"
+                        placeholder="Cari nama PM, instruksi/catatan, petugas medis..."
+                        class="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none transition">
+                </div>
+                <div class="flex items-center gap-2">
+                    <select id="filter-riwayat-notif-kategori" onchange="filterRiwayatNotifList()"
+                        class="py-2 px-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500">
+                        <option value="ALL">Semua Kategori</option>
+                        <option value="Medis">Medis / Dokter</option>
+                        <option value="Obat">Obat / Farmasi</option>
+                        <option value="Psikologis">Psikologis</option>
+                        <option value="Fisioterapi">Fisioterapi</option>
+                        <option value="Penyuluhan">Penyuluhan / KIE</option>
+                        <option value="Lainnya">Lainnya</option>
+                    </select>
+                    <span id="modal-riwayat-count-badge" class="px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold whitespace-nowrap">
+                        0 Selesai
+                    </span>
+                </div>
+            </div>
+
+            <!-- CONTENT LIST / TABLE -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar py-3 pr-1 space-y-2.5" id="modal-riwayat-notif-body">
+                <p class="text-gray-400 text-xs italic text-center py-8">Memuat riwayat notifikasi selesai...</p>
+            </div>
+
+            <!-- FOOTER -->
+            <div class="pt-3.5 border-t border-gray-100 flex items-center justify-between shrink-0">
+                <span class="text-[11px] text-gray-400 flex items-center gap-1">
+                    <span class="material-icons text-xs text-amber-500">info</span>
+                    <span>Tindakan yang keliru ditandai dapat dikembalikan ke daftar aktif sewaktu-waktu.</span>
+                </span>
+                <button onclick="closeModalRiwayatNotif()"
+                    class="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition">
+                    Tutup Jendela
                 </button>
             </div>
         </div>
@@ -4704,9 +5071,17 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                                 Terapis mengenai tindakan medis PM ampuan Anda</p>
                         </div>
                     </div>
-                    <span id="peksos-notif-badge"
-                        class="px-3 py-1 bg-amber-400 text-amber-950 font-black text-xs rounded-full shadow-sm shrink-0">0
-                        Notifikasi Aktif</span>
+                    <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                        <span id="peksos-notif-badge"
+                            class="px-3 py-1 bg-amber-400 text-amber-950 font-black text-xs rounded-full shadow-sm shrink-0">0
+                            Notifikasi Aktif</span>
+                        <button onclick="openModalRiwayatNotif('peksos')"
+                            class="px-3 py-1 bg-white/20 hover:bg-white/30 text-white font-bold text-xs rounded-full shadow-sm shrink-0 flex items-center gap-1.5 transition border border-white/25 active:scale-95 cursor-pointer"
+                            title="Buka jendela riwayat notifikasi kesehatan yang sudah selesai">
+                            <span class="material-icons text-sm">history</span>
+                            <span>Riwayat Selesai (<span id="peksos-done-count">0</span>)</span>
+                        </button>
+                    </div>
                 </div>
                 <div id="peksos-notif-list" class="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                     <p class="text-teal-200/70 text-xs italic text-center py-2">Memuat notifikasi kesehatan PM ampuan...
@@ -5054,13 +5429,19 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         <!-- CAREGIVER DASHBOARD VIEW -->
         <div id="view-caregiver" class="view-section">
-            <div class="flex justify-between items-center mb-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div>
                     <h3 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
                         <span class="material-icons text-teal-600">health_and_safety</span> Dashboard Caregiver
                     </h3>
                     <p class="text-xs text-gray-500 mt-1">Pendampingan Penerima Manfaat Sesuai Klaster Penempatan Tugas
                         dari Pimpinan</p>
+                </div>
+                <div>
+                    <button id="btn-blasting-caregiver" onclick="openModalBlastingCaregiver()"
+                        class="bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition active:scale-95 cursor-pointer">
+                        <span class="material-icons text-base">campaign</span> Blasting Jurnal Pendampingan
+                    </button>
                 </div>
             </div>
 
@@ -5097,21 +5478,40 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                     <div class="text-3xl font-black text-amber-600 mt-1" id="cg-stat-notif-pending">0</div>
                     <div class="text-[11px] text-gray-400 mt-1">Perlu tindakan/kontrol kesehatan</div>
                 </div>
-                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-green-500">
-                    <div class="text-xs font-bold text-gray-500 uppercase">Tindakan Selesai</div>
-                    <div class="text-3xl font-black text-green-600 mt-1" id="cg-stat-notif-done">0</div>
-                    <div class="text-[11px] text-gray-400 mt-1">Telah terlaksana</div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-green-500 cursor-pointer hover:shadow-lg hover:border-green-600 transition group"
+                    onclick="openModalRiwayatNotif('caregiver')" title="Klik untuk melihat jendela riwayat tindakan kesehatan selesai">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-xs font-bold text-gray-500 uppercase">Tindakan Selesai</div>
+                            <div class="text-3xl font-black text-green-600 mt-1" id="cg-stat-notif-done">0</div>
+                            <div class="text-[11px] text-emerald-700 font-semibold mt-1 flex items-center gap-1">
+                                <span>Lihat Riwayat</span>
+                                <span class="material-icons text-[12px] group-hover:translate-x-0.5 transition">arrow_forward</span>
+                            </div>
+                        </div>
+                        <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition">
+                            <span class="material-icons text-xl">history</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <!-- JADWAL HEALTH NOTIFICATIONS UNTUK CAREGIVER -->
             <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 mb-8">
-                <div class="px-6 py-4 bg-teal-50 border-b border-teal-100 flex justify-between items-center">
+                <div class="px-6 py-4 bg-teal-50 border-b border-teal-100 flex flex-wrap justify-between items-center gap-3">
                     <h4 class="font-bold text-teal-900 flex items-center gap-2">
                         <span class="material-icons text-teal-600">notifications_active</span> Notifikasi & Jadwal
                         Kesehatan PM Ampuan
                     </h4>
-                    <span class="text-xs text-teal-700 font-semibold" id="cg-notif-badge">0 Notifikasi</span>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs text-teal-800 font-semibold px-2.5 py-1 bg-teal-100/80 rounded-full" id="cg-notif-badge">0 Notifikasi</span>
+                        <button onclick="openModalRiwayatNotif('caregiver')"
+                            class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer"
+                            title="Buka jendela riwayat notifikasi kesehatan yang sudah selesai">
+                            <span class="material-icons text-xs">history</span>
+                            <span>Riwayat Selesai (<span id="cg-done-count">0</span>)</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="p-4" id="cg-notif-list">
                     <p class="text-gray-400 text-xs italic text-center py-4">Memuat data notifikasi kesehatan...</p>
@@ -5335,8 +5735,12 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                     <button id="btn-penyuluhan-grup" onclick="openModalPenyuluhanGrup()"
-                        class="hidden bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition active:scale-95">
+                        class="hidden bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition active:scale-95 cursor-pointer">
                         <span class="material-icons text-base">campaign</span> Penyuluhan Komunitas (Blasting)
+                    </button>
+                    <button id="btn-blasting-instruktur" onclick="openModalBlastingInstruktur()"
+                        class="hidden bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition active:scale-95 cursor-pointer">
+                        <span class="material-icons text-base">handyman</span> Pelatihan Vokasional (Blasting)
                     </button>
                     <div class="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
                         <button onclick="switchLayTab('pm')" id="lay-tab-pm"
@@ -5876,7 +6280,8 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         case 'updateVokasionalPM':
                         case 'updatePMVokasional': return await dbUpdatePMVokasional(data.id, data.vokasional);
                         case 'alihkanPeksos': return await dbAlihkanPeksos(data);
-                        case 'blastingPenyuluhan': return await dbBlastingPenyuluhan(data);
+                        case 'blastingPenyuluhan':
+                        case 'blastingJurnal': return await dbBlastingPenyuluhan(data);
                         case 'simpanReasesmen': return await dbSimpanReasesmen(data);
                         case 'getReasesmen': return await dbGetReasesmenList(data.id || data.id_pm);
                         case 'getAllUsers': return await dbGetAllUsers();
@@ -6351,8 +6756,10 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             const peksosNotifMap = {};
             try {
                 const notifs = await apiCall('getNotifKesehatan', { peksos: currentUser.name });
-                const pendingNotifs = notifs.filter(n => n.status !== 'Selesai');
+                const pendingNotifs = (notifs || []).filter(n => n.status !== 'Selesai');
+                const doneNotifs = (notifs || []).filter(n => n.status === 'Selesai');
                 if (el('peksos-notif-badge')) el('peksos-notif-badge').innerText = `${pendingNotifs.length} Notifikasi Aktif`;
+                if (el('peksos-done-count')) el('peksos-done-count').innerText = `${doneNotifs.length}`;
 
                 // Map notifikasi aktif per PM ID
                 pendingNotifs.forEach(n => {
@@ -6361,14 +6768,22 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 });
 
                 let nHtml = '';
-                if (!notifs || notifs.length === 0) {
-                    nHtml = '<p class="text-teal-100/70 text-xs italic text-center py-2">Belum ada notifikasi atau jadwal kesehatan dari Nakes untuk PM ampuan Anda.</p>';
+                if (!pendingNotifs || pendingNotifs.length === 0) {
+                    nHtml = `
+                        <div class="p-4 rounded-xl bg-white/10 backdrop-blur border border-white/15 text-center">
+                            <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-400/20 text-emerald-300 mb-1">
+                                <span class="material-icons text-lg">check_circle</span>
+                            </div>
+                            <p class="text-teal-100 font-bold text-xs">Semua Notifikasi Selesai</p>
+                            <p class="text-teal-200/70 text-[11px] mt-0.5">Tidak ada notifikasi kesehatan aktif yang menunggu tindakan.</p>
+                            ${doneNotifs.length > 0 ? `<button onclick="openModalRiwayatNotif('peksos')" class="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-bold transition border border-white/25 cursor-pointer active:scale-95"><span class="material-icons text-xs">history</span> Buka Riwayat Selesai (${doneNotifs.length})</button>` : ''}
+                        </div>
+                    `;
                 } else {
-                    notifs.forEach(n => {
-                        const isDone = n.status === 'Selesai';
+                    pendingNotifs.forEach(n => {
                         const isUrgent = n.status === 'Diingatkan';
-                        let badgeCls = isDone ? 'bg-green-100 text-green-800 border-green-200' : (isUrgent ? 'bg-red-100 text-red-800 border-red-200 animate-pulse' : 'bg-amber-100 text-amber-800 border-amber-200');
-                        let badgeTxt = isDone ? 'Selesai' : (isUrgent ? 'URGENT: Diingatkan Klinik' : 'Menunggu Action');
+                        let badgeCls = isUrgent ? 'bg-red-500 text-white border-red-300 animate-pulse' : 'bg-amber-400 text-amber-950 border-amber-300';
+                        let badgeTxt = isUrgent ? 'URGENT: Diingatkan Klinik' : 'Menunggu Action';
 
                         let detailStr = '';
                         if (n.detail) {
@@ -6383,7 +6798,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         }
 
                         nHtml += `
-                            <div class="p-3 rounded-xl bg-white/10 backdrop-blur border border-white/15 hover:bg-white/15 transition flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <div class="p-3.5 rounded-xl bg-white/10 backdrop-blur border border-white/15 hover:bg-white/15 transition flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                                 <div>
                                     <div class="flex items-center gap-2 mb-1">
                                         <span class="px-2 py-0.5 text-[10px] font-bold rounded border ${badgeCls}">${badgeTxt}</span>
@@ -6391,13 +6806,15 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                                         <span class="text-[10px] text-teal-200">(${n.kategori || 'Kesehatan'})</span>
                                     </div>
                                     <p class="text-xs text-teal-50 mt-1">${detailStr || n.catatan || '-'}</p>
-                                    <div class="text-[10px] text-teal-200/80 mt-1 flex items-center gap-3">
+                                    <div class="text-[10px] text-teal-200/80 mt-1 flex flex-wrap items-center gap-3">
                                         <span><i class="material-icons text-[12px] align-middle">event</i> Target: <b>${formatDateStandard(n.tgl_jadwal)}</b></span>
                                         <span><i class="material-icons text-[12px] align-middle">person</i> Nakes: ${n.petugas || '-'} (${n.tenaga_kesehatan || 'Nakes'})</span>
                                         <span><i class="material-icons text-[12px] align-middle">face</i> Caregiver: ${n.caregiver || '-'}</span>
                                     </div>
                                 </div>
-                                ${!isDone ? `<button onclick="selesaiNotif('${n.id}')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow shrink-0">Tandai Selesai</button>` : ''}
+                                <button onclick="selesaiNotif('${n.id}')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow shrink-0 flex items-center gap-1 active:scale-95 cursor-pointer">
+                                    <span class="material-icons text-xs">done</span> Tandai Selesai
+                                </button>
                             </div>
                         `;
                     });
@@ -6576,17 +6993,26 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 el('cg-stat-notif-pending').innerText = pendingNotifs.length;
                 el('cg-stat-notif-done').innerText = doneNotifs.length;
                 el('cg-notif-badge').innerText = `${pendingNotifs.length} Notifikasi Aktif`;
+                if (el('cg-done-count')) el('cg-done-count').innerText = `${doneNotifs.length}`;
 
-                // Render Notifikasi List
+                // Render Notifikasi List (HANYA AKTIF / PENDING)
                 let nHtml = '';
-                if (notifs.length === 0) {
-                    nHtml = '<p class="text-gray-400 text-xs italic text-center py-4">Belum ada notifikasi atau jadwal kesehatan untuk PM pada klaster ampuan Anda.</p>';
+                if (pendingNotifs.length === 0) {
+                    nHtml = `
+                        <div class="p-6 rounded-xl bg-slate-50 border border-dashed border-gray-200 text-center">
+                            <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 mb-2">
+                                <span class="material-icons text-xl">check_circle</span>
+                            </div>
+                            <p class="font-bold text-gray-700 text-xs">Semua Notifikasi Selesai</p>
+                            <p class="text-[11px] text-gray-400 mt-0.5">Tidak ada notifikasi kesehatan aktif yang menunggu tindakan untuk klaster Anda.</p>
+                            ${doneNotifs.length > 0 ? `<button onclick="openModalRiwayatNotif('caregiver')" class="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-lg text-xs font-bold transition border border-teal-200 cursor-pointer active:scale-95"><span class="material-icons text-xs">history</span> Buka Riwayat Selesai (${doneNotifs.length})</button>` : ''}
+                        </div>
+                    `;
                 } else {
-                    notifs.forEach(n => {
-                        const isDone = n.status === 'Selesai';
+                    pendingNotifs.forEach(n => {
                         const isUrgent = n.status === 'Diingatkan';
-                        let badgeCls = isDone ? 'bg-green-100 text-green-800 border-green-200' : (isUrgent ? 'bg-red-100 text-red-800 border-red-200 animate-pulse' : 'bg-amber-100 text-amber-800 border-amber-200');
-                        let badgeTxt = isDone ? 'Selesai' : (isUrgent ? 'URGENT: Diingatkan Klinik' : 'Menunggu Action');
+                        let badgeCls = isUrgent ? 'bg-red-100 text-red-800 border-red-200 animate-pulse' : 'bg-amber-100 text-amber-800 border-amber-200';
+                        let badgeTxt = isUrgent ? 'URGENT: Diingatkan Klinik' : 'Menunggu Action';
 
                         let detailStr = '';
                         if (n.detail) {
@@ -6614,7 +7040,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                                         <span><i class="material-icons text-[12px] align-middle">person</i> Penginput: ${n.petugas || '-'} (${n.tenaga_kesehatan || 'Nakes'})</span>
                                     </div>
                                 </div>
-                                ${!isDone ? `<button onclick="selesaiNotif('${n.id}')" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow shrink-0">Tandai Selesai</button>` : ''}
+                                <button onclick="selesaiNotif('${n.id}')" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow shrink-0 flex items-center gap-1 active:scale-95 cursor-pointer">
+                                    <span class="material-icons text-xs">done</span> Tandai Selesai
+                                </button>
                             </div>
                         `;
                     });
@@ -6690,6 +7118,13 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             if (btnGrup) {
                 if (isPenyuluh || r === 'admin') btnGrup.classList.remove('hidden');
                 else btnGrup.classList.add('hidden');
+            }
+
+            // Tombol Blasting Pelatihan Vokasional Khusus Instruktur (dan Admin)
+            const btnBlastInstruktur = el('btn-blasting-instruktur');
+            if (btnBlastInstruktur) {
+                if (isInstruktur || r === 'admin') btnBlastInstruktur.classList.remove('hidden');
+                else btnBlastInstruktur.classList.add('hidden');
             }
 
             // Populate Dropdown Filter Vokasional
@@ -6843,6 +7278,170 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 else renderJadwalKesehatan();
             } catch (e) { console.error(e); myAlert("Gagal mengupdate status: " + e.message); }
             finally { showLoad(false); }
+        }
+
+        // =========================================================================
+        // JENDELA RIWAYAT NOTIFIKASI KESEHATAN SELESAI (PEKSOS & CAREGIVER)
+        // =========================================================================
+        let currentRiwayatNotifs = [];
+        let currentRiwayatRole = '';
+
+        async function openModalRiwayatNotif(sourceRole) {
+            currentRiwayatRole = (sourceRole || (currentUser && currentUser.role ? currentUser.role : 'peksos')).toLowerCase();
+            const modal = el('modal-riwayat-notif-selesai');
+            if (!modal) return;
+            modal.classList.remove('hidden');
+
+            const roleTag = el('modal-riwayat-role-tag');
+            if (roleTag) {
+                roleTag.innerText = currentRiwayatRole === 'caregiver' ? 'Caregiver' : 'Pekerja Sosial';
+            }
+
+            const body = el('modal-riwayat-notif-body');
+            if (body) {
+                body.innerHTML = '<p class="text-gray-400 text-xs italic text-center py-8">Memuat riwayat notifikasi selesai...</p>';
+            }
+
+            // Reset search input & filter
+            if (el('filter-riwayat-notif-search')) el('filter-riwayat-notif-search').value = '';
+            if (el('filter-riwayat-notif-kategori')) el('filter-riwayat-notif-kategori').value = 'ALL';
+
+            await loadRiwayatNotifData();
+        }
+
+        async function loadRiwayatNotifData() {
+            try {
+                let all = [];
+                if (currentRiwayatRole === 'caregiver') {
+                    const allNotifs = await apiCall('getNotifKesehatan');
+                    const myKlastersLower = (currentUser.klasters || []).map(k => (k || '').toLowerCase().trim());
+                    const pmIds = new Set(allPM.filter(p => {
+                        const pKluster = (p.kluster || '').toLowerCase().trim();
+                        const matchKlaster = myKlastersLower.length > 0 && myKlastersLower.includes(pKluster);
+                        const matchDirect = (p.caregiver || '').toLowerCase().includes((currentUser.name || '').toLowerCase());
+                        return matchKlaster || matchDirect;
+                    }).map(p => p.id));
+
+                    all = (allNotifs || []).filter(n => pmIds.has(n.id_pm) || (n.caregiver && n.caregiver.toLowerCase().includes((currentUser.name || '').toLowerCase())));
+                } else {
+                    // Pekerja Sosial
+                    all = await apiCall('getNotifKesehatan', { peksos: currentUser.name });
+                }
+
+                currentRiwayatNotifs = (all || []).filter(n => n.status === 'Selesai');
+                filterRiwayatNotifList();
+            } catch (e) {
+                console.error("loadRiwayatNotifData error:", e);
+                const body = el('modal-riwayat-notif-body');
+                if (body) body.innerHTML = `<p class="text-rose-500 text-xs text-center py-8">Gagal memuat riwayat: ${e.message}</p>`;
+            }
+        }
+
+        function closeModalRiwayatNotif() {
+            const modal = el('modal-riwayat-notif-selesai');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function filterRiwayatNotifList() {
+            const q = (el('filter-riwayat-notif-search')?.value || '').toLowerCase().trim();
+            const kat = el('filter-riwayat-notif-kategori')?.value || 'ALL';
+
+            const filtered = currentRiwayatNotifs.filter(n => {
+                if (kat !== 'ALL' && (n.kategori || '').toLowerCase() !== kat.toLowerCase()) return false;
+                if (q) {
+                    const matchName = (n.nama_pm || '').toLowerCase().includes(q);
+                    const matchCat = (n.catatan || '').toLowerCase().includes(q);
+                    const matchNakes = (n.petugas || '').toLowerCase().includes(q) || (n.tenaga_kesehatan || '').toLowerCase().includes(q);
+                    const matchDetail = typeof n.detail === 'string'
+                        ? n.detail.toLowerCase().includes(q)
+                        : JSON.stringify(n.detail || {}).toLowerCase().includes(q);
+                    if (!matchName && !matchCat && !matchNakes && !matchDetail) return false;
+                }
+                return true;
+            });
+
+            const countBadge = el('modal-riwayat-count-badge');
+            if (countBadge) countBadge.innerText = `${filtered.length} Selesai`;
+
+            const body = el('modal-riwayat-notif-body');
+            if (!body) return;
+
+            if (filtered.length === 0) {
+                body.innerHTML = `
+                    <div class="p-8 rounded-xl bg-gray-50 border border-dashed border-gray-200 text-center my-2">
+                        <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 text-gray-400 mb-2">
+                            <span class="material-icons text-2xl">history_toggle_off</span>
+                        </div>
+                        <p class="font-bold text-gray-700 text-xs">Tidak Ada Riwayat Notifikasi Selesai</p>
+                        <p class="text-[11px] text-gray-400 mt-1">Belum ada tindakan kesehatan yang ditandai selesai atau tidak cocok dengan filter pencarian.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            filtered.forEach(n => {
+                let detailStr = '';
+                if (n.detail) {
+                    if (typeof n.detail === 'string') detailStr = n.detail;
+                    else {
+                        const parts = [];
+                        for (const [k, v] of Object.entries(n.detail)) {
+                            if (v) parts.push(`<b>${k}:</b> ${v}`);
+                        }
+                        detailStr = parts.join(' | ');
+                    }
+                }
+
+                html += `
+                    <div class="p-3.5 rounded-xl border border-emerald-100 bg-emerald-50/25 hover:bg-emerald-50/50 transition flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                <span class="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                    <span class="material-icons text-[11px]">check_circle</span> Selesai
+                                </span>
+                                <span class="text-xs font-black text-gray-900">${n.nama_pm}</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded font-bold bg-teal-50 text-teal-800 border border-teal-200">${n.kategori || 'Kesehatan'}</span>
+                            </div>
+                            <p class="text-xs text-gray-700 mt-1">${detailStr || n.catatan || '-'}</p>
+                            <div class="text-[10px] text-gray-500 mt-1.5 flex flex-wrap items-center gap-3">
+                                <span><i class="material-icons text-[12px] align-middle text-emerald-600">event_available</i> Target: <b>${formatDateStandard(n.tgl_jadwal)}</b></span>
+                                <span><i class="material-icons text-[12px] align-middle text-teal-600">medical_services</i> Nakes: ${n.petugas || '-'} (${n.tenaga_kesehatan || 'Nakes'})</span>
+                                <span><i class="material-icons text-[12px] align-middle text-purple-600">supervisor_account</i> PJ: ${n.peksos || '-'} | CG: ${n.caregiver || '-'}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button onclick="kembalikanNotif('${n.id}')"
+                                class="px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-amber-400 bg-white hover:bg-amber-50 text-gray-600 hover:text-amber-800 text-[11px] font-bold transition flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
+                                title="Kembalikan tindakan ini ke daftar aktif jika keliru ditandai selesai">
+                                <span class="material-icons text-[13px] text-amber-600">replay</span>
+                                <span>Kembalikan ke Aktif</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            body.innerHTML = html;
+        }
+
+        async function kembalikanNotif(id) {
+            const ok = await myConfirm("Kembalikan notifikasi tindakan kesehatan ini ke daftar aktif (Menunggu Tindakan)?");
+            if (!ok) return;
+            showLoad(true);
+            try {
+                await apiCall('updateStatusNotif', { id: id, status: 'Menunggu' });
+                await myAlert("Notifikasi berhasil dikembalikan ke daftar aktif.");
+                await loadRiwayatNotifData();
+                const r = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase();
+                if (r === 'caregiver') renderCaregiver();
+                else if (r === 'pekerja sosial') renderPekerjaSosial();
+                else renderJadwalKesehatan();
+            } catch (e) {
+                console.error("kembalikanNotif error:", e);
+                myAlert("Gagal mengembalikan status: " + e.message);
+            } finally {
+                showLoad(false);
+            }
         }
 
         // --- DASHBOARD STATS (GRAFIK KESELURUHAN & PER SEKTOR LAYANAN) ---
@@ -7825,11 +8424,11 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    ${!isAlumni ? `
-                                    <button onclick="openModalReasesmen('${as.id}')" class="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow flex items-center gap-1 transition active:scale-95">
+                                    ${(!isAlumni && (typeof currentUser !== 'undefined' && currentUser && (currentUser.role || '').toLowerCase() === 'pekerja sosial')) ? `
+                                    <button onclick="openModalReasesmen('${as.id}')" class="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow flex items-center gap-1 transition active:scale-95 cursor-pointer">
                                         <span class="material-icons text-xs">add_task</span> + Re-Asesmen
                                     </button>` : ''}
-                                    <button onclick="swTab(3)" class="bg-white hover:bg-purple-50 text-purple-800 border border-purple-200 font-bold px-3 py-1.5 rounded-xl text-xs transition flex items-center gap-1 shadow-2xs">
+                                    <button onclick="swTab(3)" class="bg-white hover:bg-purple-50 text-purple-800 border border-purple-200 font-bold px-3 py-1.5 rounded-xl text-xs transition flex items-center gap-1 shadow-2xs cursor-pointer">
                                         <span>Lihat Seluruh Riwayat (${currentPMReasesmenList.length})</span>
                                         <span class="material-icons text-xs">arrow_forward</span>
                                     </button>
@@ -7874,8 +8473,8 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                                 </h4>
                                 <p class="text-xs text-gray-500 mt-0.5">Riwayat evaluasi berkala perkembangan PM selama proses rehabilitasi residensial.</p>
                             </div>
-                            ${!isAlumni ? `
-                            <button onclick="openModalReasesmen('${as.id}')" class="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow flex items-center gap-1.5 transition active:scale-95">
+                            ${(!isAlumni && (typeof currentUser !== 'undefined' && currentUser && (currentUser.role || '').toLowerCase() === 'pekerja sosial')) ? `
+                            <button onclick="openModalReasesmen('${as.id}')" class="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow flex items-center gap-1.5 transition active:scale-95 cursor-pointer">
                                 <span class="material-icons text-sm">add_task</span> + Input Re-Asesmen Baru
                             </button>` : ''}
                         </div>
@@ -9278,6 +9877,389 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             }
         }
 
+        // =========================================================================
+        // --- BLASTING JURNAL INSTRUKTUR (PELATIHAN VOKASIONAL KELOMPOK) ---
+        // =========================================================================
+        async function openModalBlastingInstruktur() {
+            const now = new Date();
+            const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            if (el('iblast-tgl')) el('iblast-tgl').value = localIso;
+            if (el('iblast-topik')) el('iblast-topik').value = '';
+            if (el('iblast-lokasi')) el('iblast-lokasi').value = 'Bengkel / Ruang Vokasi STPL Bekasi';
+            if (el('iblast-subjektif')) el('iblast-subjektif').value = '';
+            if (el('iblast-objektif')) el('iblast-objektif').value = '';
+            if (el('iblast-analisis')) el('iblast-analisis').value = '';
+            if (el('iblast-rencana')) el('iblast-rencana').value = '';
+            if (el('iblast-search-pm')) el('iblast-search-pm').value = '';
+            if (el('iblast-dokumen')) el('iblast-dokumen').value = '';
+
+            // Populate Vokasi Select Dropdown
+            let vokasiList = [];
+            try {
+                vokasiList = await dbGetMasterVokasional();
+            } catch (e) {
+                console.warn("Gagal load master vokasional untuk blasting:", e);
+            }
+            if (!vokasiList || vokasiList.length === 0) {
+                vokasiList = [
+                    { nama: 'Menjahit & Konveksi' },
+                    { nama: 'Barista & Olahan Kopi' },
+                    { nama: 'Tata Boga & Pembuatan Roti/Kue' },
+                    { nama: 'Pertanian Hidroponik & Kebun Sayur' },
+                    { nama: 'Kerajinan Keset & Tekstil Daur Ulang' },
+                    { nama: 'Perbengkelan Sepeda Motor Ringan' },
+                    { nama: 'Sablon & Percetakan Kaos/Merchandise' },
+                    { nama: 'Desain Grafis & Komputer Dasar' },
+                    { nama: 'Pangkas Rambut & Barbershop' }
+                ];
+            }
+
+            let optHtml = '<option value="">-- Pilih Program Vokasional --</option>';
+            vokasiList.forEach(v => {
+                optHtml += `<option value="${v.nama}">${v.nama}</option>`;
+            });
+            optHtml += '<option value="Lainnya / Umum">Lainnya / Bimbingan Vokasi Umum</option>';
+            if (el('iblast-vokasi')) el('iblast-vokasi').innerHTML = optHtml;
+
+            // Populate Checklist PM Aktif
+            const activePMs = allPM.filter(p => p.status === 'Aktif');
+            let cHtml = '';
+            activePMs.forEach(p => {
+                const vokStr = (p.vokasional || '').trim();
+                let vokBadge = '';
+                if (vokStr) {
+                    vokBadge = `<span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] bg-amber-50 text-amber-900 border border-amber-200 font-semibold truncate max-w-full">${vokStr}</span>`;
+                } else {
+                    vokBadge = `<span class="inline-block mt-0.5 text-[10px] text-gray-400 italic">Belum pilih vokasi</span>`;
+                }
+
+                cHtml += `
+                    <label class="iblast-pm-item flex items-center gap-2 p-2 rounded-lg bg-white border border-gray-200 hover:border-amber-400 hover:bg-amber-50/50 cursor-pointer transition" data-name="${(p.nama || '').toLowerCase()}" data-vokasi="${vokStr.toLowerCase()}">
+                        <input type="checkbox" name="chk-blasting-instruktur-pm" value="${p.id}" onchange="updateBlastingInstrukturCount()" class="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer shrink-0">
+                        <div class="truncate text-xs flex-1">
+                            <span class="font-bold text-gray-800 block truncate">${p.nama}</span>
+                            <span class="text-[10px] text-gray-400 truncate">${p.kluster || 'Residensial'}</span>
+                            ${vokBadge}
+                        </div>
+                    </label>
+                `;
+            });
+            if (el('iblast-pm-checklist')) el('iblast-pm-checklist').innerHTML = cHtml || '<p class="text-xs text-gray-400 italic">Tidak ada PM aktif.</p>';
+            updateBlastingInstrukturCount();
+
+            el('modal-blasting-instruktur').classList.remove('hidden');
+        }
+
+        function closeModalBlastingInstruktur() {
+            if (el('modal-blasting-instruktur')) el('modal-blasting-instruktur').classList.add('hidden');
+        }
+
+        function onInstrukturVokasiChange() {
+            const v = el('iblast-vokasi')?.value || '';
+            if (v && el('iblast-topik') && !el('iblast-topik').value.trim()) {
+                el('iblast-topik').placeholder = `Materi praktik untuk ${v}...`;
+            }
+        }
+
+        function selectPMByVokasi() {
+            const selVokasi = (el('iblast-vokasi')?.value || '').toLowerCase().trim();
+            if (!selVokasi) return myAlert("Pilih Program Vokasional di dropdown terlebih dahulu!");
+
+            const chks = document.querySelectorAll('input[name="chk-blasting-instruktur-pm"]');
+            let matchedCount = 0;
+            chks.forEach(c => {
+                const label = c.closest('.iblast-pm-item');
+                const pVok = (label?.getAttribute('data-vokasi') || '').toLowerCase();
+                if (pVok && (pVok.includes(selVokasi) || selVokasi.includes(pVok))) {
+                    c.checked = true;
+                    matchedCount++;
+                }
+            });
+            updateBlastingInstrukturCount();
+            if (matchedCount === 0) {
+                myAlert(`Tidak ada PM yang terdaftar pada program "${el('iblast-vokasi')?.value}". Anda dapat memilih PM secara manual dari daftar.`);
+            }
+        }
+
+        function filterBlastingInstrukturPMList() {
+            const q = (el('iblast-search-pm')?.value || '').toLowerCase().trim();
+            const items = document.querySelectorAll('.iblast-pm-item');
+            items.forEach(item => {
+                const name = item.getAttribute('data-name') || '';
+                const vok = item.getAttribute('data-vokasi') || '';
+                if (!q || name.includes(q) || vok.includes(q)) item.style.display = 'flex';
+                else item.style.display = 'none';
+            });
+        }
+
+        function toggleSelectAllInstrukturBlast(select) {
+            const chks = document.querySelectorAll('input[name="chk-blasting-instruktur-pm"]');
+            chks.forEach(c => {
+                const label = c.closest('.iblast-pm-item');
+                if (!label || label.style.display !== 'none') {
+                    c.checked = select;
+                }
+            });
+            updateBlastingInstrukturCount();
+        }
+
+        function updateBlastingInstrukturCount() {
+            const count = document.querySelectorAll('input[name="chk-blasting-instruktur-pm"]:checked').length;
+            if (el('iblast-selected-count')) el('iblast-selected-count').innerText = `${count} PM Dipilih`;
+        }
+
+        async function executeBlastingInstruktur() {
+            const tgl = el('iblast-tgl').value;
+            const vokasi = el('iblast-vokasi').value;
+            const topik = el('iblast-topik').value.trim();
+            const lokasi = el('iblast-lokasi').value.trim() || 'Bengkel / Ruang Vokasi STPL Bekasi';
+            const sub = el('iblast-subjektif').value.trim();
+            const obj = el('iblast-objektif').value.trim();
+            const ana = el('iblast-analisis').value.trim();
+            const ren = el('iblast-rencana').value.trim();
+            const dokUrl = el('iblast-dokumen')?.value?.trim() || '';
+
+            const checkedBoxes = document.querySelectorAll('input[name="chk-blasting-instruktur-pm"]:checked');
+            const targetPmIds = Array.from(checkedBoxes).map(c => c.value);
+
+            if (!tgl) return myAlert("Tanggal & Waktu pelatihan wajib diisi!");
+            if (!vokasi) return myAlert("Pilih Program Vokasional!");
+            if (!topik) return myAlert("Materi / Topik pelatihan vokasi wajib diisi!");
+            if (targetPmIds.length === 0) return myAlert("Pilih minimal 1 Penerima Manfaat yang mengikuti sesi pelatihan ini!");
+
+            const ok = await myConfirm(`Konfirmasi Blasting Jurnal Pelatihan Vokasional:\n\nProgram: ${vokasi}\nMateri: ${topik}\nJumlah PM: ${targetPmIds.length} Penerima Manfaat\n\nLanjutkan kirim ke jurnal pelayanan masing-masing PM?`);
+            if (!ok) return;
+
+            showLoad(true);
+            try {
+                const listPm = targetPmIds.map(id => {
+                    const pm = (typeof allPM !== 'undefined' && Array.isArray(allPM)) ? allPM.find(p => p.id === id) : null;
+                    return { id: id, nama: pm ? pm.nama : id };
+                });
+
+                const fullTopik = `${vokasi} - ${topik}`;
+                const payload = {
+                    tgl,
+                    topik: fullTopik,
+                    lokasi,
+                    vokasi,
+                    subjektif: sub,
+                    objektif: obj,
+                    analisis: ana,
+                    rencana: ren,
+                    kondisi: `[PELATIHAN VOKASI: ${vokasi} - ${topik}] (S): ${sub || '-'} | (O): ${obj || '-'}`,
+                    intervensi: `(A): ${ana || '-'} | (P): ${ren || '-'}`,
+                    targetPmIds,
+                    listPm,
+                    petugas: (currentUser && currentUser.name) || 'Instruktur',
+                    role: 'Instruktur',
+                    dokumen_url: dokUrl,
+                    fotoUrl: dokUrl,
+                    catatan: `Sesi: Pelatihan Keterampilan Vokasional (${vokasi}). Materi: ${topik}. Tempat: ${lokasi}. Total Peserta Hadir: ${targetPmIds.length} PM.`
+                };
+
+                const res = await apiCall('blastingJurnal', payload);
+                const count = (res && typeof res.insertedCount === 'number') ? res.insertedCount : (typeof res === 'number' ? res : targetPmIds.length);
+                closeModalBlastingInstruktur();
+                showLoad(false);
+                await myAlert(`SUKSES BLASTING JURNAL VOKASI!\n\nBerhasil mengirim ${count} catatan pelatihan keterampilan vokasional ke masing-masing jurnal pelayanan PM.`);
+            } catch (e) {
+                showLoad(false);
+                console.error("executeBlastingInstruktur error:", e);
+                await myAlert("Gagal blasting jurnal instruktur: " + e.message);
+            } finally {
+                showLoad(false);
+            }
+        }
+
+        // =========================================================================
+        // --- BLASTING JURNAL CAREGIVER (PENDAMPINGAN KLASTER KELOMPOK) ---
+        // =========================================================================
+        let cachedCaregiverBlastScope = 'my';
+        let cachedMyKlastersList = [];
+
+        async function openModalBlastingCaregiver() {
+            const now = new Date();
+            const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            if (el('cgblast-tgl')) el('cgblast-tgl').value = localIso;
+            if (el('cgblast-kegiatan')) el('cgblast-kegiatan').value = '';
+            if (el('cgblast-lokasi')) el('cgblast-lokasi').value = 'Wisma / Asrama Klaster STPL Bekasi';
+            if (el('cgblast-catatan')) el('cgblast-catatan').value = '';
+            if (el('cgblast-subjektif')) el('cgblast-subjektif').value = '';
+            if (el('cgblast-objektif')) el('cgblast-objektif').value = '';
+            if (el('cgblast-analisis')) el('cgblast-analisis').value = '';
+            if (el('cgblast-rencana')) el('cgblast-rencana').value = '';
+            if (el('cgblast-search-pm')) el('cgblast-search-pm').value = '';
+            if (el('cgblast-dokumen')) el('cgblast-dokumen').value = '';
+
+            // Ambil klaster penugasan caregiver yang sedang login
+            cachedMyKlastersList = [];
+            try {
+                if (typeof getCaregiverKlasterByUser === 'function') {
+                    cachedMyKlastersList = await getCaregiverKlasterByUser(currentUser.username, currentUser.name);
+                }
+            } catch (e) {
+                console.warn("Gagal load klaster caregiver untuk blasting:", e);
+            }
+
+            // Render PM checklist
+            const activePMs = allPM.filter(p => p.status === 'Aktif');
+            let cHtml = '';
+            activePMs.forEach(p => {
+                const isMyKlaster = (cachedMyKlastersList.length === 0 || cachedMyKlastersList.includes(p.kluster));
+                const badgeKlaster = `<span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] ${isMyKlaster ? 'bg-teal-100 text-teal-800 border border-teal-300 font-bold' : 'bg-gray-100 text-gray-600'}">${p.kluster || 'Residensial'}</span>`;
+
+                cHtml += `
+                    <label class="cgblast-pm-item flex items-center gap-2 p-2 rounded-lg bg-white border border-gray-200 hover:border-teal-400 hover:bg-teal-50/50 cursor-pointer transition" data-name="${(p.nama || '').toLowerCase()}" data-klaster="${(p.kluster || '').toLowerCase()}" data-ismy="${isMyKlaster ? '1' : '0'}">
+                        <input type="checkbox" name="chk-blasting-caregiver-pm" value="${p.id}" onchange="updateBlastingCaregiverCount()" class="rounded text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer shrink-0">
+                        <div class="truncate text-xs flex-1">
+                            <span class="font-bold text-gray-800 block truncate">${p.nama}</span>
+                            <div class="flex items-center gap-1.5 truncate">
+                                ${badgeKlaster}
+                                <span class="text-[10px] text-gray-400 truncate">${p.lokasi || 'Wisma'}</span>
+                            </div>
+                        </div>
+                    </label>
+                `;
+            });
+            if (el('cgblast-pm-checklist')) el('cgblast-pm-checklist').innerHTML = cHtml || '<p class="text-xs text-gray-400 italic">Tidak ada PM aktif.</p>';
+
+            // Set default scope ke "Klaster Saya" jika caregiver memiliki klaster tugas, atau "all" jika tidak
+            filterCaregiverBlastScope(cachedMyKlastersList.length > 0 ? 'my' : 'all');
+            updateBlastingCaregiverCount();
+
+            el('modal-blasting-caregiver').classList.remove('hidden');
+        }
+
+        function closeModalBlastingCaregiver() {
+            if (el('modal-blasting-caregiver')) el('modal-blasting-caregiver').classList.add('hidden');
+        }
+
+        function setCGKegiatanPreset(kegiatan, lokasi) {
+            if (el('cgblast-kegiatan')) el('cgblast-kegiatan').value = kegiatan;
+            if (el('cgblast-lokasi') && lokasi) el('cgblast-lokasi').value = lokasi;
+        }
+
+        function filterCaregiverBlastScope(scope) {
+            cachedCaregiverBlastScope = scope;
+            const btnMy = el('cgblast-filter-my');
+            const btnAll = el('cgblast-filter-all');
+
+            if (btnMy && btnAll) {
+                if (scope === 'my') {
+                    btnMy.className = "px-2.5 py-1 text-[11px] font-bold rounded-md bg-teal-700 text-white transition shadow-2xs cursor-pointer";
+                    btnAll.className = "px-2.5 py-1 text-[11px] font-bold rounded-md text-teal-900 hover:bg-teal-200/60 transition cursor-pointer";
+                } else {
+                    btnAll.className = "px-2.5 py-1 text-[11px] font-bold rounded-md bg-teal-700 text-white transition shadow-2xs cursor-pointer";
+                    btnMy.className = "px-2.5 py-1 text-[11px] font-bold rounded-md text-teal-900 hover:bg-teal-200/60 transition cursor-pointer";
+                }
+            }
+
+            filterBlastingCaregiverPMList();
+        }
+
+        function filterBlastingCaregiverPMList() {
+            const q = (el('cgblast-search-pm')?.value || '').toLowerCase().trim();
+            const items = document.querySelectorAll('.cgblast-pm-item');
+
+            items.forEach(item => {
+                const name = item.getAttribute('data-name') || '';
+                const klaster = item.getAttribute('data-klaster') || '';
+                const isMy = item.getAttribute('data-ismy') === '1';
+
+                const matchesQuery = (!q || name.includes(q) || klaster.includes(q));
+                const matchesScope = (cachedCaregiverBlastScope === 'all' || isMy);
+
+                if (matchesQuery && matchesScope) item.style.display = 'flex';
+                else item.style.display = 'none';
+            });
+        }
+
+        function toggleSelectAllCaregiverBlast(select) {
+            const chks = document.querySelectorAll('input[name="chk-blasting-caregiver-pm"]');
+            chks.forEach(c => {
+                const label = c.closest('.cgblast-pm-item');
+                if (!label || label.style.display !== 'none') {
+                    c.checked = select;
+                }
+            });
+            updateBlastingCaregiverCount();
+        }
+
+        function updateBlastingCaregiverCount() {
+            const count = document.querySelectorAll('input[name="chk-blasting-caregiver-pm"]:checked').length;
+            if (el('cgblast-selected-count')) el('cgblast-selected-count').innerText = `${count} PM Dipilih`;
+        }
+
+        async function executeBlastingCaregiver() {
+            const tgl = el('cgblast-tgl').value;
+            const kegiatan = el('cgblast-kegiatan').value.trim();
+            const lokasi = el('cgblast-lokasi').value.trim() || 'Wisma / Asrama Klaster STPL Bekasi';
+            const catatan = el('cgblast-catatan').value.trim();
+            const sub = el('cgblast-subjektif').value.trim();
+            const obj = el('cgblast-objektif').value.trim();
+            const ana = el('cgblast-analisis').value.trim();
+            const ren = el('cgblast-rencana').value.trim();
+            const dokUrl = el('cgblast-dokumen')?.value?.trim() || '';
+
+            const checkedBoxes = document.querySelectorAll('input[name="chk-blasting-caregiver-pm"]:checked');
+            const targetPmIds = Array.from(checkedBoxes).map(c => c.value);
+
+            if (!tgl) return myAlert("Tanggal & Waktu pendampingan wajib diisi!");
+            if (!kegiatan) return myAlert("Bentuk / Jenis kegiatan pendampingan wajib diisi!");
+            if (targetPmIds.length === 0) return myAlert("Pilih minimal 1 Penerima Manfaat yang mengikuti kegiatan ini!");
+
+            const ok = await myConfirm(`Konfirmasi Blasting Jurnal Pendampingan Caregiver:\n\nKegiatan: ${kegiatan}\nLokasi: ${lokasi}\nJumlah PM: ${targetPmIds.length} Penerima Manfaat\n\nLanjutkan kirim ke jurnal pelayanan masing-masing PM?`);
+            if (!ok) return;
+
+            showLoad(true);
+            try {
+                const listPm = targetPmIds.map(id => {
+                    const pm = (typeof allPM !== 'undefined' && Array.isArray(allPM)) ? allPM.find(p => p.id === id) : null;
+                    return { id: id, nama: pm ? pm.nama : id };
+                });
+
+                let fullCatatan = `Sesi: Pendampingan / Pengasuhan Kelompok (${kegiatan}). Tempat: ${lokasi}. Total PM: ${targetPmIds.length} PM.`;
+                if (catatan) fullCatatan += ` | Catatan: ${catatan}`;
+
+                const payload = {
+                    tgl,
+                    topik: kegiatan,
+                    lokasi,
+                    subjektif: sub,
+                    objektif: obj,
+                    analisis: ana,
+                    rencana: ren,
+                    kondisi: `[PENDAMPINGAN CAREGIVER: ${kegiatan}] (S): ${sub || '-'} | (O): ${obj || '-'}`,
+                    intervensi: `(A): ${ana || '-'} | (P): ${ren || '-'}`,
+                    targetPmIds,
+                    listPm,
+                    petugas: (currentUser && currentUser.name) || 'Caregiver',
+                    role: 'Caregiver',
+                    dokumen_url: dokUrl,
+                    fotoUrl: dokUrl,
+                    catatan: fullCatatan
+                };
+
+                const res = await apiCall('blastingJurnal', payload);
+                const count = (res && typeof res.insertedCount === 'number') ? res.insertedCount : (typeof res === 'number' ? res : targetPmIds.length);
+                closeModalBlastingCaregiver();
+                showLoad(false);
+                await myAlert(`SUKSES BLASTING JURNAL CAREGIVER!\n\nBerhasil mengirim ${count} catatan pendampingan kelompok ke masing-masing jurnal pelayanan PM.`);
+
+                // Refresh caregiver dashboard jika sedang aktif
+                if (currentUser && currentUser.role && currentUser.role.toLowerCase() === 'caregiver') {
+                    if (typeof renderCaregiver === 'function') renderCaregiver();
+                }
+            } catch (e) {
+                showLoad(false);
+                console.error("executeBlastingCaregiver error:", e);
+                await myAlert("Gagal blasting jurnal caregiver: " + e.message);
+            } finally {
+                showLoad(false);
+            }
+        }
+
         // --- GANTI PEKERJA SOSIAL PENGAMPU (PIMPINAN - ZERO DATA LOSS) ---
         async function openModalGantiPeksos(pmId) {
             const pm = allPM.find(p => p.id === pmId);
@@ -9350,6 +10332,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         // --- RE-ASESMEN BERKALA (PEKERJA SOSIAL) ---
         function openModalReasesmen(pmId) {
+            if (!currentUser || (currentUser.role || '').toLowerCase() !== 'pekerja sosial') {
+                return myAlert("Akses ditolak: Fitur input Re-Asesmen hanya dapat dilakukan oleh Pekerja Sosial.");
+            }
             const pm = allPM.find(p => p.id === pmId);
             if (!pm) return myAlert("Data PM tidak ditemukan");
 
@@ -9374,6 +10359,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         }
 
         async function submitReasesmen() {
+            if (!currentUser || (currentUser.role || '').toLowerCase() !== 'pekerja sosial') {
+                return myAlert("Akses ditolak: Hanya Pekerja Sosial yang berwenang menyimpan Re-Asesmen.");
+            }
             const id = el('reasesmen-pm-id').value;
             const tahap = el('reasesmen-tahap').value;
             const tgl = el('reasesmen-tgl').value;
