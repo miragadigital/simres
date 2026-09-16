@@ -2486,9 +2486,9 @@
                     <span class="font-medium">Selesai Rehabilitasi / Mandiri</span>
                 </label>
                 <label class="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <input type="radio" name="alasan_term" value="Rujukan ke Balai/Sentra Lain"
+                    <input type="radio" name="alasan_term" value="Rujukan ke sentra/Sentra Lain"
                         class="mr-3 text-primary">
-                    <span class="font-medium">Rujukan ke Balai / Sentra Lain</span>
+                    <span class="font-medium">Rujukan ke sentra / Sentra Lain</span>
                 </label>
                 <label class="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
                     <input type="radio" name="alasan_term" value="Meninggal Dunia" class="mr-3 text-primary">
@@ -2587,13 +2587,15 @@
                             <option value="PL1">PL1</option>
                             <option value="PL2">PL2</option>
                             <option value="PL3">PL3</option>
+                            <option value="Rusun">Rusun</option>
                         </select>
                     </div>
                     <div>
                         <label class="lbl">Jenis Wisma *</label>
                         <select id="edit-wisma-jenis" class="input-field font-bold text-gray-800">
+                            <option value="Pondok">Pondok / Paviliun (2 Orang / 1 Keluarga)</option>
                             <option value="Barak">Barak (Multi Orang / Ruang Besar)</option>
-                            <option value="Pondok / Paviliun">Pondok / Paviliun (2 Orang / 1 Keluarga)</option>
+                            <option value="Rusun">Rusun (Rumah Susun)</option>
                         </select>
                     </div>
                 </div>
@@ -2946,7 +2948,8 @@
                 <div>
                     <label class="lbl flex items-center justify-between">
                         <span class="flex items-center gap-1">
-                            <span class="material-icons text-sm text-teal-600">link</span> Link Dokumentasi Kegiatan / Foto
+                            <span class="material-icons text-sm text-teal-600">link</span> Link Dokumentasi Kegiatan /
+                            Foto
                         </span>
                         <span class="text-[10px] text-gray-400 font-normal">Opsional (Google Drive / Cloud URL)</span>
                     </label>
@@ -3006,8 +3009,10 @@
                     <span
                         class="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-2xl material-icons text-2xl shadow-md">handyman</span>
                     <div>
-                        <h3 class="text-lg font-black text-amber-950">Pelatihan Vokasional / Keterampilan (Blasting Jurnal)</h3>
-                        <p class="text-xs text-amber-800">Isi materi bimbingan vokasional 1 kali, otomatis blasting masuk ke jurnal pelayanan seluruh PM yang mengikuti pelatihan.</p>
+                        <h3 class="text-lg font-black text-amber-950">Pelatihan Vokasional / Keterampilan (Blasting
+                            Jurnal)</h3>
+                        <p class="text-xs text-amber-800">Isi materi bimbingan vokasional 1 kali, otomatis blasting
+                            masuk ke jurnal pelayanan seluruh PM yang mengikuti pelatihan.</p>
                     </div>
                 </div>
                 <button onclick="closeModalBlastingInstruktur()" class="text-gray-400 hover:text-gray-600">
@@ -3050,7 +3055,8 @@
                 <div class="bg-amber-50/70 p-4 rounded-xl border border-amber-200 space-y-3">
                     <span
                         class="font-extrabold text-amber-950 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                        <span class="material-icons text-sm text-amber-700">edit_note</span> Uraian Perkembangan Pelatihan (SOAP Vokasional)
+                        <span class="material-icons text-sm text-amber-700">edit_note</span> Uraian Perkembangan
+                        Pelatihan (SOAP Vokasional)
                     </span>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
@@ -3072,7 +3078,8 @@
                                 class="input-field bg-white text-xs border-amber-200"></textarea>
                         </div>
                         <div>
-                            <label class="lbl text-[11px]">Perencanaan (P) - Rencana Tindak Lanjut / Modul Berikutnya</label>
+                            <label class="lbl text-[11px]">Perencanaan (P) - Rencana Tindak Lanjut / Modul
+                                Berikutnya</label>
                             <textarea id="iblast-rencana" rows="2"
                                 placeholder="Materi lanjutan, tugas mandiri, perbaikan teknik, finishing produk..."
                                 class="input-field bg-white text-xs border-amber-200"></textarea>
@@ -3084,7 +3091,8 @@
                 <div>
                     <label class="lbl flex items-center justify-between">
                         <span class="flex items-center gap-1">
-                            <span class="material-icons text-sm text-amber-600">link</span> Link Dokumentasi Foto / Kegiatan Pelatihan
+                            <span class="material-icons text-sm text-amber-600">link</span> Link Dokumentasi Foto /
+                            Kegiatan Pelatihan
                         </span>
                         <span class="text-[10px] text-gray-400 font-normal">Opsional (Google Drive / Cloud URL)</span>
                     </label>
@@ -3098,9 +3106,11 @@
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
                         <div>
                             <span class="font-bold text-gray-900 text-xs flex items-center gap-1">
-                                <span class="material-icons text-amber-600 text-sm">checklist</span> Pilih Penerima Manfaat yang Mengikuti Sesi:
+                                <span class="material-icons text-amber-600 text-sm">checklist</span> Pilih Penerima
+                                Manfaat yang Mengikuti Sesi:
                             </span>
-                            <span id="iblast-selected-count" class="text-[11px] font-extrabold text-amber-700">0 PM Dipilih</span>
+                            <span id="iblast-selected-count" class="text-[11px] font-extrabold text-amber-700">0 PM
+                                Dipilih</span>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
                             <input type="text" id="iblast-search-pm" oninput="filterBlastingInstrukturPMList()"
@@ -3146,8 +3156,10 @@
                     <span
                         class="p-2.5 bg-gradient-to-br from-teal-600 to-emerald-600 text-white rounded-2xl material-icons text-2xl shadow-md">health_and_safety</span>
                     <div>
-                        <h3 class="text-lg font-black text-teal-950">Pendampingan Klaster / Wisma (Blasting Jurnal Caregiver)</h3>
-                        <p class="text-xs text-teal-700">Input 1 kali catatan pengasuhan kelompok atau aktivitas harian bersama, otomatis blasting masuk ke jurnal pelayanan PM binaan.</p>
+                        <h3 class="text-lg font-black text-teal-950">Pendampingan Klaster / Wisma (Blasting Jurnal
+                            Caregiver)</h3>
+                        <p class="text-xs text-teal-700">Input 1 kali catatan pengasuhan kelompok atau aktivitas harian
+                            bersama, otomatis blasting masuk ke jurnal pelayanan PM binaan.</p>
                     </div>
                 </div>
                 <button onclick="closeModalBlastingCaregiver()" class="text-gray-400 hover:text-gray-600">
@@ -3181,11 +3193,26 @@
                 <!-- PRESET CEPAT KEGIATAN CAREGIVER -->
                 <div class="flex flex-wrap gap-1.5 items-center">
                     <span class="text-[11px] font-bold text-teal-800">Preset Cepat:</span>
-                    <button type="button" onclick="setCGKegiatanPreset('Senam Pagi & Kebugaran Jasmani', 'Lapangan Olahraga STPL Bekasi')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🏃 Senam Pagi</button>
-                    <button type="button" onclick="setCGKegiatanPreset('Bimbingan Kebersihan Diri & Asrama (ADL)', 'Wisma / Asrama Klaster')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🧹 Bersih Wisma & ADL</button>
-                    <button type="button" onclick="setCGKegiatanPreset('Bimbingan Ibadah & Kerohanian Bersama', 'Musholla / Ruang Ibadah STPL')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🕌 Ibadah Bersama</button>
-                    <button type="button" onclick="setCGKegiatanPreset('Makan Bersama & Pemantauan Nutrisi', 'Ruang Makan Bersama')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🍽️ Makan Bersama</button>
-                    <button type="button" onclick="setCGKegiatanPreset('Dinamika Kelompok Wisma & Rekreasi Sore', 'Gazebo / Ruang Bersama Wisma')" class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🎯 Dinamika Sore</button>
+                    <button type="button"
+                        onclick="setCGKegiatanPreset('Senam Pagi & Kebugaran Jasmani', 'Lapangan Olahraga STPL Bekasi')"
+                        class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🏃
+                        Senam Pagi</button>
+                    <button type="button"
+                        onclick="setCGKegiatanPreset('Bimbingan Kebersihan Diri & Asrama (ADL)', 'Wisma / Asrama Klaster')"
+                        class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🧹
+                        Bersih Wisma & ADL</button>
+                    <button type="button"
+                        onclick="setCGKegiatanPreset('Bimbingan Ibadah & Kerohanian Bersama', 'Musholla / Ruang Ibadah STPL')"
+                        class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🕌
+                        Ibadah Bersama</button>
+                    <button type="button"
+                        onclick="setCGKegiatanPreset('Makan Bersama & Pemantauan Nutrisi', 'Ruang Makan Bersama')"
+                        class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🍽️
+                        Makan Bersama</button>
+                    <button type="button"
+                        onclick="setCGKegiatanPreset('Dinamika Kelompok Wisma & Rekreasi Sore', 'Gazebo / Ruang Bersama Wisma')"
+                        class="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-full border border-teal-200 text-[10px] font-medium transition cursor-pointer">🎯
+                        Dinamika Sore</button>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3207,7 +3234,8 @@
                 <div class="bg-teal-50/70 p-4 rounded-xl border border-teal-200 space-y-3">
                     <span
                         class="font-extrabold text-teal-950 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                        <span class="material-icons text-sm text-teal-700">edit_note</span> Uraian Perkembangan Pengasuhan (SOAP Caregiver)
+                        <span class="material-icons text-sm text-teal-700">edit_note</span> Uraian Perkembangan
+                        Pengasuhan (SOAP Caregiver)
                     </span>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
@@ -3241,7 +3269,8 @@
                 <div>
                     <label class="lbl flex items-center justify-between">
                         <span class="flex items-center gap-1">
-                            <span class="material-icons text-sm text-teal-600">link</span> Link Dokumentasi Foto / Kegiatan Pendampingan
+                            <span class="material-icons text-sm text-teal-600">link</span> Link Dokumentasi Foto /
+                            Kegiatan Pendampingan
                         </span>
                         <span class="text-[10px] text-gray-400 font-normal">Opsional (Google Drive / Cloud URL)</span>
                     </label>
@@ -3255,22 +3284,27 @@
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
                         <div>
                             <span class="font-bold text-gray-900 text-xs flex items-center gap-1">
-                                <span class="material-icons text-teal-600 text-sm">checklist</span> Tag Penerima Manfaat yang Didampingi:
+                                <span class="material-icons text-teal-600 text-sm">checklist</span> Tag Penerima Manfaat
+                                yang Didampingi:
                             </span>
-                            <span id="cgblast-selected-count" class="text-[11px] font-extrabold text-teal-700">0 PM Dipilih</span>
+                            <span id="cgblast-selected-count" class="text-[11px] font-extrabold text-teal-700">0 PM
+                                Dipilih</span>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
                             <div class="flex items-center bg-teal-100/70 p-0.5 rounded-lg border border-teal-200">
                                 <button type="button" id="cgblast-filter-my" onclick="filterCaregiverBlastScope('my')"
-                                    class="px-2.5 py-1 text-[11px] font-bold rounded-md bg-teal-700 text-white transition shadow-2xs cursor-pointer">Klaster Saya</button>
+                                    class="px-2.5 py-1 text-[11px] font-bold rounded-md bg-teal-700 text-white transition shadow-2xs cursor-pointer">Klaster
+                                    Saya</button>
                                 <button type="button" id="cgblast-filter-all" onclick="filterCaregiverBlastScope('all')"
-                                    class="px-2.5 py-1 text-[11px] font-bold rounded-md text-teal-900 hover:bg-teal-200/60 transition cursor-pointer">Semua PM</button>
+                                    class="px-2.5 py-1 text-[11px] font-bold rounded-md text-teal-900 hover:bg-teal-200/60 transition cursor-pointer">Semua
+                                    PM</button>
                             </div>
                             <input type="text" id="cgblast-search-pm" oninput="filterBlastingCaregiverPMList()"
                                 placeholder="Cari nama PM..."
                                 class="px-2 py-1 text-xs border border-teal-200 rounded-lg outline-none w-32">
                             <button type="button" onclick="toggleSelectAllCaregiverBlast(true)"
-                                class="bg-teal-100 hover:bg-teal-200 text-teal-900 px-2 py-1 rounded text-[11px] font-bold cursor-pointer">Pilih Semua</button>
+                                class="bg-teal-100 hover:bg-teal-200 text-teal-900 px-2 py-1 rounded text-[11px] font-bold cursor-pointer">Pilih
+                                Semua</button>
                             <button type="button" onclick="toggleSelectAllCaregiverBlast(false)"
                                 class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded text-[11px] font-bold cursor-pointer">Reset</button>
                         </div>
@@ -3427,7 +3461,7 @@
                     <div>
                         <label class="lbl">3. Interaksi & Relasi Sosial</label>
                         <textarea id="reasesmen-sosial" rows="2"
-                            placeholder="Hubungan dengan sesama PM di wisma, petugas & kepatuhan aturan balai..."
+                            placeholder="Hubungan dengan sesama PM di wisma, petugas & kepatuhan aturan sentra..."
                             class="input-field bg-white"></textarea>
                     </div>
                     <div>
@@ -3460,19 +3494,23 @@
     <!-- MODAL RIWAYAT NOTIFIKASI KESEHATAN SELESAI (PEKSOS & CAREGIVER) -->
     <div id="modal-riwayat-notif-selesai"
         class="fixed inset-0 bg-black/60 z-[70] hidden flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs">
-        <div class="bg-white rounded-2xl shadow-2xl p-5 sm:p-6 w-full max-w-4xl animate-[fadeIn_0.2s_ease-out] border border-gray-100 max-h-[92vh] flex flex-col">
+        <div
+            class="bg-white rounded-2xl shadow-2xl p-5 sm:p-6 w-full max-w-4xl animate-[fadeIn_0.2s_ease-out] border border-gray-100 max-h-[92vh] flex flex-col">
             <!-- HEADER -->
             <div class="flex items-center justify-between pb-3.5 border-b border-gray-100 shrink-0">
                 <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs">
+                    <div
+                        class="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs">
                         <span class="material-icons text-2xl">history</span>
                     </div>
                     <div>
                         <div class="flex items-center gap-2">
                             <h3 class="text-base sm:text-lg font-black text-gray-900">Riwayat Notifikasi Selesai</h3>
-                            <span id="modal-riwayat-role-tag" class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 uppercase tracking-wider"></span>
+                            <span id="modal-riwayat-role-tag"
+                                class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 uppercase tracking-wider"></span>
                         </div>
-                        <p class="text-xs text-gray-500 mt-0.5">Daftar tindakan & instruksi medis/kesehatan yang telah ditandai selesai.</p>
+                        <p class="text-xs text-gray-500 mt-0.5">Daftar tindakan & instruksi medis/kesehatan yang telah
+                            ditandai selesai.</p>
                     </div>
                 </div>
                 <button onclick="closeModalRiwayatNotif()"
@@ -3482,9 +3520,11 @@
             </div>
 
             <!-- SEARCH & FILTER TOOLBAR -->
-            <div class="py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0 border-b border-gray-50">
+            <div
+                class="py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0 border-b border-gray-50">
                 <div class="relative flex-1">
-                    <span class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">search</span>
+                    <span
+                        class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">search</span>
                     <input type="text" id="filter-riwayat-notif-search" oninput="filterRiwayatNotifList()"
                         placeholder="Cari nama PM, instruksi/catatan, petugas medis..."
                         class="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none transition">
@@ -3500,7 +3540,8 @@
                         <option value="Penyuluhan">Penyuluhan / KIE</option>
                         <option value="Lainnya">Lainnya</option>
                     </select>
-                    <span id="modal-riwayat-count-badge" class="px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold whitespace-nowrap">
+                    <span id="modal-riwayat-count-badge"
+                        class="px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold whitespace-nowrap">
                         0 Selesai
                     </span>
                 </div>
@@ -4314,137 +4355,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             </div>
 
             <!-- TAB ADMIN 3: DASHBOARD KETERISIAN & KAPASITAS WISMA -->
-            <div id="adm-content-keterisian" class="space-y-6 hidden">
-                <div class="bg-white rounded-2xl shadow-md p-6 border border-emerald-100">
-                    <div
-                        class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 mb-6 gap-4">
-                        <div class="flex items-center gap-3">
-                            <div class="p-3 bg-emerald-50 rounded-xl text-emerald-600">
-                                <span class="material-icons text-2xl">domain</span>
-                            </div>
-                            <div>
-                                <h4 class="text-lg font-bold text-gray-900">Dashboard Kapasitas & Total Keterisian Wisma
-                                </h4>
-                                <p class="text-xs text-gray-500">Monitoring daya tampung dan persentase okupansi tempat
-                                    tinggal residensial SIMRES</p>
-                            </div>
-                        </div>
-
-                        <!-- TOGGLE VIEW SWITCHER -->
-                        <div class="flex bg-gray-100 p-1 rounded-xl text-xs font-bold border border-gray-200">
-                            <button onclick="switchWismaDashTab('overall')" id="btn-wismadash-overall"
-                                class="px-3 py-1.5 rounded-lg bg-white shadow-sm text-emerald-700 font-extrabold transition">Secara
-                                Keseluruhan</button>
-                            <button onclick="switchWismaDashTab('per_pl')" id="btn-wismadash-per_pl"
-                                class="px-3 py-1.5 rounded-lg text-gray-600 hover:text-gray-900 transition">Per PL
-                                (PL1/PL2/PL3)</button>
-                            <button onclick="switchWismaDashTab('per_wisma')" id="btn-wismadash-per_wisma"
-                                class="px-3 py-1.5 rounded-lg text-gray-600 hover:text-gray-900 transition">Per
-                                Wisma</button>
-                        </div>
-                    </div>
-
-                    <!-- CONTAINER STATS CARDS -->
-                    <div id="wismadash-summary-cards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-center">
-                            <h5 class="text-emerald-800 text-xs font-bold uppercase">Total Kapasitas</h5>
-                            <p class="text-3xl font-black text-emerald-700 mt-1" id="wd-total-kapasitas">0</p>
-                            <span class="text-[10px] text-emerald-600 font-semibold">Seluruh Daya Tampung</span>
-                        </div>
-                        <div class="bg-cyan-50 p-4 rounded-xl border border-cyan-100 text-center">
-                            <h5 class="text-cyan-800 text-xs font-bold uppercase">Total Terisi</h5>
-                            <p class="text-3xl font-black text-cyan-700 mt-1" id="wd-total-terisi">0</p>
-                            <span class="text-[10px] text-cyan-600 font-semibold">PPKS Inap Aktif</span>
-                        </div>
-                        <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 text-center">
-                            <h5 class="text-indigo-800 text-xs font-bold uppercase">Sisa Kapasitas</h5>
-                            <p class="text-3xl font-black text-indigo-700 mt-1" id="wd-sisa-kapasitas">0</p>
-                            <span class="text-[10px] text-indigo-600 font-semibold">Kamar/Tempat Kosong</span>
-                        </div>
-                        <div class="bg-amber-50 p-4 rounded-xl border border-amber-100 text-center">
-                            <h5 class="text-amber-800 text-xs font-bold uppercase">% Okupansi Overall</h5>
-                            <p class="text-3xl font-black text-amber-700 mt-1" id="wd-persen-okupansi">0%</p>
-                            <span class="text-[10px] text-amber-600 font-semibold">Tingkat Keterisian</span>
-                        </div>
-                    </div>
-
-                    <!-- VIEW 1: SECARA KESELURUHAN -->
-                    <div id="wismadash-content-overall" class="space-y-6">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- CARD SEKTOR BARAK -->
-                            <div class="bg-slate-50 p-5 rounded-2xl border border-gray-200">
-                                <div class="flex justify-between items-center mb-3">
-                                    <h5 class="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-                                        <span class="material-icons text-indigo-600">groups</span> Wisma Berjenis Barak
-                                    </h5>
-                                    <span
-                                        class="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-full font-bold text-[11px]">Multi-Orang</span>
-                                </div>
-                                <p class="text-xs text-gray-500 mb-4">Ruang wisma berkapasitas besar menampung banyak
-                                    penerima manfaat dalam 1 ruangan.</p>
-                                <div class="grid grid-cols-3 gap-2 text-center mb-3">
-                                    <div class="bg-white p-2 rounded-lg border text-xs"><span
-                                            class="block text-gray-400 font-bold">Kapasitas</span><b id="wd-barak-kap"
-                                            class="text-sm text-gray-800">0</b></div>
-                                    <div class="bg-white p-2 rounded-lg border text-xs"><span
-                                            class="block text-gray-400 font-bold">Terisi</span><b id="wd-barak-terisi"
-                                            class="text-sm text-indigo-600">0</b></div>
-                                    <div class="bg-white p-2 rounded-lg border text-xs"><span
-                                            class="block text-gray-400 font-bold">Sisa</span><b id="wd-barak-sisa"
-                                            class="text-sm text-emerald-600">0</b></div>
-                                </div>
-                                <div class="w-full bg-gray-200 rounded-full h-3">
-                                    <div id="wd-barak-bar"
-                                        class="bg-indigo-600 h-3 rounded-full transition-all duration-500"
-                                        style="width: 0%"></div>
-                                </div>
-                            </div>
-
-                            <!-- CARD SEKTOR PONDOK / PAVILIUN -->
-                            <div class="bg-slate-50 p-5 rounded-2xl border border-gray-200">
-                                <div class="flex justify-between items-center mb-3">
-                                    <h5 class="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-                                        <span class="material-icons text-teal-600">cottage</span> Wisma Berjenis Pondok
-                                        / Paviliun
-                                    </h5>
-                                    <span
-                                        class="px-2.5 py-0.5 bg-teal-100 text-teal-800 rounded-full font-bold text-[11px]">2
-                                        Orang / Keluarga</span>
-                                </div>
-                                <p class="text-xs text-gray-500 mb-4">Ruang wisma berukuran kecil khusus menampung 2
-                                    orang atau 1 unit keluarga.</p>
-                                <div class="grid grid-cols-3 gap-2 text-center mb-3">
-                                    <div class="bg-white p-2 rounded-lg border text-xs"><span
-                                            class="block text-gray-400 font-bold">Kapasitas</span><b id="wd-pav-kap"
-                                            class="text-sm text-gray-800">0</b></div>
-                                    <div class="bg-white p-2 rounded-lg border text-xs"><span
-                                            class="block text-gray-400 font-bold">Terisi</span><b id="wd-pav-terisi"
-                                            class="text-sm text-teal-600">0</b></div>
-                                    <div class="bg-white p-2 rounded-lg border text-xs"><span
-                                            class="block text-gray-400 font-bold">Sisa</span><b id="wd-pav-sisa"
-                                            class="text-sm text-emerald-600">0</b></div>
-                                </div>
-                                <div class="w-full bg-gray-200 rounded-full h-3">
-                                    <div id="wd-pav-bar"
-                                        class="bg-teal-600 h-3 rounded-full transition-all duration-500"
-                                        style="width: 0%"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- VIEW 2: PER WILAYAH (PL1, PL2, PL3) -->
-                    <div id="wismadash-content-per_pl" class="grid grid-cols-1 md:grid-cols-3 gap-5 hidden">
-                        <div id="wd-pl1-card" class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm"></div>
-                        <div id="wd-pl2-card" class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm"></div>
-                        <div id="wd-pl3-card" class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm"></div>
-                    </div>
-
-                    <!-- VIEW 3: PER WISMA (GRID CARD DETIL) -->
-                    <div id="wismadash-content-per_wisma"
-                        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 hidden"></div>
-                </div>
-            </div>
+            <div id="adm-content-keterisian" class="space-y-6 hidden"></div>
 
             <!-- TAB ADMIN 4: MASTER VOKASIONAL & KETERAMPILAN -->
             <div id="adm-content-vokasional" class="space-y-6 hidden">
@@ -4871,7 +4782,8 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                             <div>
                                 <h4 class="text-lg font-bold text-gray-900">Distribusi Sektor Residensial (Inpatient)
                                 </h4>
-                                <p class="text-xs text-gray-500">Penerima manfaat yang dirawat inap di balai/residensial
+                                <p class="text-xs text-gray-500">Penerima manfaat yang dirawat inap di
+                                    sentra/residensial
                                 </p>
                             </div>
                         </div>
@@ -5049,6 +4961,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 </div>
 
             </div>
+
+            <!-- TAB PIMPINAN 6: DASHBOARD OKUPANSI WISMA -->
+            <div id="pim-content-wisma" class="space-y-6 hidden"></div>
         </div>
 
         <!-- PEKERJA SOSIAL -->
@@ -5479,17 +5394,20 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                     <div class="text-[11px] text-gray-400 mt-1">Perlu tindakan/kontrol kesehatan</div>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-green-500 cursor-pointer hover:shadow-lg hover:border-green-600 transition group"
-                    onclick="openModalRiwayatNotif('caregiver')" title="Klik untuk melihat jendela riwayat tindakan kesehatan selesai">
+                    onclick="openModalRiwayatNotif('caregiver')"
+                    title="Klik untuk melihat jendela riwayat tindakan kesehatan selesai">
                     <div class="flex justify-between items-start">
                         <div>
                             <div class="text-xs font-bold text-gray-500 uppercase">Tindakan Selesai</div>
                             <div class="text-3xl font-black text-green-600 mt-1" id="cg-stat-notif-done">0</div>
                             <div class="text-[11px] text-emerald-700 font-semibold mt-1 flex items-center gap-1">
                                 <span>Lihat Riwayat</span>
-                                <span class="material-icons text-[12px] group-hover:translate-x-0.5 transition">arrow_forward</span>
+                                <span
+                                    class="material-icons text-[12px] group-hover:translate-x-0.5 transition">arrow_forward</span>
                             </div>
                         </div>
-                        <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition">
+                        <div
+                            class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition">
                             <span class="material-icons text-xl">history</span>
                         </div>
                     </div>
@@ -5498,13 +5416,15 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
             <!-- JADWAL HEALTH NOTIFICATIONS UNTUK CAREGIVER -->
             <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 mb-8">
-                <div class="px-6 py-4 bg-teal-50 border-b border-teal-100 flex flex-wrap justify-between items-center gap-3">
+                <div
+                    class="px-6 py-4 bg-teal-50 border-b border-teal-100 flex flex-wrap justify-between items-center gap-3">
                     <h4 class="font-bold text-teal-900 flex items-center gap-2">
                         <span class="material-icons text-teal-600">notifications_active</span> Notifikasi & Jadwal
                         Kesehatan PM Ampuan
                     </h4>
                     <div class="flex items-center gap-2 flex-wrap">
-                        <span class="text-xs text-teal-800 font-semibold px-2.5 py-1 bg-teal-100/80 rounded-full" id="cg-notif-badge">0 Notifikasi</span>
+                        <span class="text-xs text-teal-800 font-semibold px-2.5 py-1 bg-teal-100/80 rounded-full"
+                            id="cg-notif-badge">0 Notifikasi</span>
                         <button onclick="openModalRiwayatNotif('caregiver')"
                             class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer"
                             title="Buka jendela riwayat notifikasi kesehatan yang sudah selesai">
@@ -6637,6 +6557,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
             const cntEl = el('sf-count-admin');
             if (cntEl) cntEl.innerHTML = `Menampilkan <b>${filtered.length}</b> dari <b>${allPM.length}</b> PM`;
+            renderWismaOccupancyDashboard();
         }
 
         function renderPimpinan() {
@@ -6645,6 +6566,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             renderPimpinanApproval();
             renderPimpinanMonitor();
             renderStats();
+            renderWismaOccupancyDashboard();
         }
 
         function renderPimpinanTugas() {
@@ -9024,6 +8946,21 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         }
 
         // --- WISMA MANAGEMENT & OCCUPANCY DASHBOARD LOGIC ---
+        function getJenisWismaCategory(w) {
+            if (!w) return 'Pondok';
+            const jw = (w.jenis_wisma || '').toLowerCase();
+            const nm = (w.nama_wisma || '').toLowerCase();
+            const wil = (w.wilayah || '').toLowerCase();
+
+            if (jw.includes('rusun') || nm.includes('rusun') || wil.includes('rusun')) {
+                return 'Rusun';
+            } else if (jw.includes('barak') || nm.includes('barak')) {
+                return 'Barak';
+            } else {
+                return 'Pondok';
+            }
+        }
+
         function getWismaOccupancyStats() {
             const wismaList = allWisma || [];
             const activePMs = (allPM || []).filter(p => p.status !== 'Terminasi');
@@ -9038,6 +8975,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             });
 
             let unassignedPMs = [];
+            const sortedWisma = [...wismaList].sort((a, b) => (b.nama_wisma || '').length - (a.nama_wisma || '').length);
 
             activePMs.forEach(p => {
                 const loc = (p.lokasi_penempatan || p.lokasi || '').trim().toLowerCase();
@@ -9047,14 +8985,26 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 }
 
                 let matchedId = null;
+                // 1. Pencocokan tepat (ID, Nama Wisma, Nama Ruang, atau Nama + Ruang)
                 for (const w of wismaList) {
                     const wName = (w.nama_wisma || '').toLowerCase();
                     const rName = (w.nama_ruang || '').toLowerCase();
                     const wId = (w.id || '').toLowerCase();
 
-                    if (loc === wId || loc === wName || loc === rName || loc.includes(wName) || wName.includes(loc)) {
+                    if (loc === wId || loc === wName || loc === rName || loc === `${wName} - ${rName}` || loc === `${wName} (${rName})`) {
                         matchedId = w.id;
                         break;
+                    }
+                }
+
+                // 2. Pencocokan substring (jika belum tepat)
+                if (!matchedId) {
+                    for (const w of sortedWisma) {
+                        const wName = (w.nama_wisma || '').toLowerCase();
+                        if (wName && (loc.includes(wName) || wName.includes(loc))) {
+                            matchedId = w.id;
+                            break;
+                        }
                     }
                 }
 
@@ -9070,12 +9020,14 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             let totalTerisi = 0;
 
             let barakKapasitas = 0, barakTerisi = 0;
-            let pavKapasitas = 0, pavTerisi = 0;
+            let pondokKapasitas = 0, pondokTerisi = 0;
+            let rusunKapasitas = 0, rusunTerisi = 0;
 
             const perPL = {
                 PL1: { totalKapasitas: 0, totalTerisi: 0, wismaCount: 0 },
                 PL2: { totalKapasitas: 0, totalTerisi: 0, wismaCount: 0 },
-                PL3: { totalKapasitas: 0, totalTerisi: 0, wismaCount: 0 }
+                PL3: { totalKapasitas: 0, totalTerisi: 0, wismaCount: 0 },
+                Rusun: { totalKapasitas: 0, totalTerisi: 0, wismaCount: 0 }
             };
 
             wismaList.forEach(w => {
@@ -9086,25 +9038,32 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 totalKapasitas += kap;
                 totalTerisi += terisi;
 
-                if ((w.jenis_wisma || '').toLowerCase().includes('barak')) {
+                const cat = getJenisWismaCategory(w);
+                if (cat === 'Rusun') {
+                    rusunKapasitas += kap;
+                    rusunTerisi += terisi;
+                } else if (cat === 'Barak') {
                     barakKapasitas += kap;
                     barakTerisi += terisi;
                 } else {
-                    pavKapasitas += kap;
-                    pavTerisi += terisi;
+                    pondokKapasitas += kap;
+                    pondokTerisi += terisi;
                 }
 
-                const plKey = (w.wilayah || 'PL1').toUpperCase();
-                if (perPL[plKey]) {
-                    perPL[plKey].totalKapasitas += kap;
-                    perPL[plKey].totalTerisi += terisi;
-                    perPL[plKey].wismaCount++;
+                let plKey = (w.wilayah || 'PL1').toUpperCase();
+                if (plKey.includes('RUSUN')) plKey = 'Rusun';
+                if (!perPL[plKey]) {
+                    perPL[plKey] = { totalKapasitas: 0, totalTerisi: 0, wismaCount: 0 };
                 }
+                perPL[plKey].totalKapasitas += kap;
+                perPL[plKey].totalTerisi += terisi;
+                perPL[plKey].wismaCount++;
             });
 
             const overallPct = totalKapasitas > 0 ? Math.round((totalTerisi / totalKapasitas) * 100) : 0;
             const barakPct = barakKapasitas > 0 ? Math.round((barakTerisi / barakKapasitas) * 100) : 0;
-            const pavPct = pavKapasitas > 0 ? Math.round((pavTerisi / pavKapasitas) * 100) : 0;
+            const pondokPct = pondokKapasitas > 0 ? Math.round((pondokTerisi / pondokKapasitas) * 100) : 0;
+            const rusunPct = rusunKapasitas > 0 ? Math.round((rusunTerisi / rusunKapasitas) * 100) : 0;
 
             return {
                 totalKapasitas,
@@ -9112,7 +9071,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 sisaKapasitas: Math.max(0, totalKapasitas - totalTerisi),
                 overallPct,
                 barak: { kapasitas: barakKapasitas, terisi: barakTerisi, sisa: Math.max(0, barakKapasitas - barakTerisi), pct: barakPct },
-                paviliun: { kapasitas: pavKapasitas, terisi: pavTerisi, sisa: Math.max(0, pavKapasitas - pavTerisi), pct: pavPct },
+                pondok: { kapasitas: pondokKapasitas, terisi: pondokTerisi, sisa: Math.max(0, pondokKapasitas - pondokTerisi), pct: pondokPct },
+                rusun: { kapasitas: rusunKapasitas, terisi: rusunTerisi, sisa: Math.max(0, rusunKapasitas - rusunTerisi), pct: rusunPct },
+                paviliun: { kapasitas: pondokKapasitas, terisi: pondokTerisi, sisa: Math.max(0, pondokKapasitas - pondokTerisi), pct: pondokPct },
                 perPL,
                 wismaStatsMap,
                 unassignedPMs
@@ -10462,7 +10423,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             el('edit-wisma-id').value = '';
             el('title-modal-wisma').innerText = 'Tambah Wisma Baru';
             el('edit-wisma-wilayah').value = 'PL1';
-            el('edit-wisma-jenis').value = 'Barak';
+            el('edit-wisma-jenis').value = 'Pondok';
             el('edit-wisma-nama').value = '';
             el('edit-wisma-ruang').value = '';
             el('edit-wisma-kapasitas').value = 10;
@@ -10478,7 +10439,10 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             el('edit-wisma-id').value = item.id;
             el('title-modal-wisma').innerText = 'Edit Data Wisma';
             el('edit-wisma-wilayah').value = item.wilayah || 'PL1';
-            el('edit-wisma-jenis').value = item.jenis_wisma || 'Barak';
+
+            const cat = getJenisWismaCategory(item);
+            el('edit-wisma-jenis').value = cat;
+
             el('edit-wisma-nama').value = item.nama_wisma || '';
             el('edit-wisma-ruang').value = item.nama_ruang || '';
             el('edit-wisma-kapasitas').value = item.kapasitas || 1;
@@ -10509,6 +10473,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 closeModalWisma();
                 await refreshData();
                 renderAdminWismaTable();
+                renderWismaOccupancyDashboard();
                 myAlert("Data Wisma Berhasil Disimpan!");
             } catch (e) {
                 console.error(e);
@@ -10537,6 +10502,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 await apiCall('deleteWisma', { id });
                 await refreshData();
                 renderAdminWismaTable();
+                renderWismaOccupancyDashboard();
                 myAlert("Wisma Berhasil Dihapus!");
             } catch (e) {
                 console.error(e);
@@ -10566,13 +10532,17 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                     if (pct >= 100) barColor = 'bg-rose-600';
                     else if (pct >= 75) barColor = 'bg-amber-500';
 
-                    const jenisBadge = w.jenis_wisma.includes('Barak') ?
-                        '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800">Barak</span>' :
-                        '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-teal-100 text-teal-800">Pondok/Paviliun</span>';
+                    const cat = getJenisWismaCategory(w);
+                    let jenisBadge = '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-100 text-teal-800 border border-teal-200">Pondok</span>';
+                    if (cat === 'Barak') {
+                        jenisBadge = '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">Barak</span>';
+                    } else if (cat === 'Rusun') {
+                        jenisBadge = '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">Rusun</span>';
+                    }
 
                     h += `
                         <tr>
-                            <td class="${tdClass} font-bold text-gray-900"><span class="px-2.5 py-1 bg-gray-100 border border-gray-300 rounded-lg text-xs">${w.wilayah || 'PL1'}</span></td>
+                            <td class="${tdClass} font-bold text-gray-900"><span class="px-2.5 py-1 bg-gray-100 border border-gray-300 rounded-lg text-xs font-black">${w.wilayah || 'PL1'}</span></td>
                             <td class="${tdClass}">
                                 <b class="text-gray-900 block">${w.nama_wisma}</b>
                                 <span class="text-xs text-gray-500">${w.nama_ruang || '-'}</span>
@@ -10613,91 +10583,246 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         function switchWismaDashTab(view) {
             currentWismaDashView = view;
-
-            ['overall', 'per_pl', 'per_wisma'].forEach(v => {
-                const btn = el(`btn-wismadash-${v}`);
-                const content = el(`wismadash-content-${v}`);
-                if (btn) {
-                    if (v === view) {
-                        btn.className = "px-3 py-1.5 rounded-lg bg-white shadow-sm text-emerald-700 font-extrabold transition";
-                    } else {
-                        btn.className = "px-3 py-1.5 rounded-lg text-gray-600 hover:text-gray-900 transition";
-                    }
-                }
-                if (content) {
-                    if (v === view) content.classList.remove('hidden');
-                    else content.classList.add('hidden');
-                }
-            });
-
             renderWismaOccupancyDashboard();
         }
 
-        function renderWismaOccupancyDashboard() {
-            const stats = getWismaOccupancyStats();
+        function buildWismaDashboardHTML(stats, currentView) {
+            const isOverall = currentView === 'overall';
+            const isPerPL = currentView === 'per_pl';
+            const isPerWisma = currentView === 'per_wisma';
 
-            if (el('wd-total-kapasitas')) el('wd-total-kapasitas').innerText = stats.totalKapasitas;
-            if (el('wd-total-terisi')) el('wd-total-terisi').innerText = stats.totalTerisi;
-            if (el('wd-sisa-kapasitas')) el('wd-sisa-kapasitas').innerText = stats.sisaKapasitas;
-            if (el('wd-persen-okupansi')) el('wd-persen-okupansi').innerText = stats.overallPct + '%';
+            const btnActiveClass = "px-3.5 py-1.5 rounded-lg bg-white shadow text-emerald-700 font-extrabold transition text-xs flex items-center gap-1";
+            const btnInactiveClass = "px-3.5 py-1.5 rounded-lg text-gray-600 hover:text-gray-900 transition text-xs font-bold flex items-center gap-1";
 
-            if (el('wd-barak-kap')) el('wd-barak-kap').innerText = stats.barak.kapasitas;
-            if (el('wd-barak-terisi')) el('wd-barak-terisi').innerText = stats.barak.terisi;
-            if (el('wd-barak-sisa')) el('wd-barak-sisa').innerText = stats.barak.sisa;
-            if (el('wd-barak-bar')) el('wd-barak-bar').style.width = stats.barak.pct + '%';
+            let html = `
+                <div class="bg-white rounded-2xl shadow-md p-6 border border-emerald-100">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 mb-6 gap-4">
+                        <div class="flex items-center gap-3">
+                            <div class="p-3 bg-emerald-50 rounded-xl text-emerald-600">
+                                <span class="material-icons text-2xl">domain</span>
+                            </div>
+                            <div>
+                                <h4 class="text-lg font-bold text-gray-900">Dashboard Kapasitas & Total Keterisian Wisma</h4>
+                                <p class="text-xs text-gray-500">Monitoring daya tampung & okupansi residensial terpisah antara Pondok, Barak, dan Rusun</p>
+                            </div>
+                        </div>
 
-            if (el('wd-pav-kap')) el('wd-pav-kap').innerText = stats.paviliun.kapasitas;
-            if (el('wd-pav-terisi')) el('wd-pav-terisi').innerText = stats.paviliun.terisi;
-            if (el('wd-pav-sisa')) el('wd-pav-sisa').innerText = stats.paviliun.sisa;
-            if (el('wd-pav-bar')) el('wd-pav-bar').style.width = stats.paviliun.pct + '%';
+                        <!-- TOGGLE VIEW SWITCHER -->
+                        <div class="flex bg-gray-100 p-1 rounded-xl text-xs font-bold border border-gray-200">
+                            <button onclick="switchWismaDashTab('overall')" class="${isOverall ? btnActiveClass : btnInactiveClass}">
+                                <span class="material-icons text-xs">dashboard</span> Secara Keseluruhan
+                            </button>
+                            <button onclick="switchWismaDashTab('per_pl')" class="${isPerPL ? btnActiveClass : btnInactiveClass}">
+                                <span class="material-icons text-xs">grid_view</span> Per Area (PL / Rusun)
+                            </button>
+                            <button onclick="switchWismaDashTab('per_wisma')" class="${isPerWisma ? btnActiveClass : btnInactiveClass}">
+                                <span class="material-icons text-xs">home</span> Per Wisma
+                            </button>
+                        </div>
+                    </div>
 
-            ['PL1', 'PL2', 'PL3'].forEach(pl => {
-                const card = el(`wd-${pl.toLowerCase()}-card`);
-                if (card) {
+                    <!-- CONTAINER STATS CARDS (OVERALL KPI) -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-center">
+                            <h5 class="text-emerald-800 text-xs font-bold uppercase">Total Kapasitas sentra</h5>
+                            <p class="text-3xl font-black text-emerald-700 mt-1">${stats.totalKapasitas}</p>
+                            <span class="text-[10px] text-emerald-600 font-semibold">Seluruh Daya Tampung</span>
+                        </div>
+                        <div class="bg-cyan-50 p-4 rounded-xl border border-cyan-100 text-center">
+                            <h5 class="text-cyan-800 text-xs font-bold uppercase">Total Terisi</h5>
+                            <p class="text-3xl font-black text-cyan-700 mt-1">${stats.totalTerisi}</p>
+                            <span class="text-[10px] text-cyan-600 font-semibold">PPKS Inap Aktif</span>
+                        </div>
+                        <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 text-center">
+                            <h5 class="text-indigo-800 text-xs font-bold uppercase">Sisa Kapasitas</h5>
+                            <p class="text-3xl font-black text-indigo-700 mt-1">${stats.sisaKapasitas}</p>
+                            <span class="text-[10px] text-indigo-600 font-semibold">Tempat / Kasur Kosong</span>
+                        </div>
+                        <div class="bg-amber-50 p-4 rounded-xl border border-amber-100 text-center">
+                            <h5 class="text-amber-800 text-xs font-bold uppercase">% Okupansi sentra</h5>
+                            <p class="text-3xl font-black text-amber-700 mt-1">${stats.overallPct}%</p>
+                            <span class="text-[10px] text-amber-600 font-semibold">Tingkat Keterisian Total</span>
+                        </div>
+                    </div>
+            `;
+
+            if (isOverall) {
+                html += `
+                    <!-- VIEW 1: SECARA KESELURUHAN (3 SEKTOR: PONDOK, BARAK, RUSUN) -->
+                    <div class="space-y-6 animate-[fadeIn_0.2s]">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            <!-- CARD SEKTOR PONDOK / PAVILIUN -->
+                            <div class="bg-gradient-to-br from-teal-50/60 to-slate-50 p-5 rounded-2xl border border-teal-200/80 shadow-xs flex flex-col justify-between">
+                                <div>
+                                    <div class="flex justify-between items-center mb-2.5">
+                                        <h5 class="font-extrabold text-teal-950 text-sm flex items-center gap-1.5">
+                                            <span class="material-icons text-teal-600">cottage</span> Wisma Berjenis Pondok
+                                        </h5>
+                                        <span class="px-2.5 py-0.5 bg-teal-100 text-teal-800 rounded-full font-bold text-[11px]">2 Orang / Keluarga</span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mb-4 leading-relaxed">Ruang wisma berukuran khusus untuk 2 orang atau 1 unit keluarga penerima manfaat.</p>
+                                </div>
+                                <div>
+                                    <div class="grid grid-cols-3 gap-2 text-center mb-3">
+                                        <div class="bg-white p-2 rounded-xl border border-teal-100 text-xs shadow-xs">
+                                            <span class="block text-gray-400 font-bold text-[10px] uppercase">Kapasitas</span>
+                                            <b class="text-sm text-gray-800">${stats.pondok.kapasitas}</b>
+                                        </div>
+                                        <div class="bg-white p-2 rounded-xl border border-teal-100 text-xs shadow-xs">
+                                            <span class="block text-teal-600 font-bold text-[10px] uppercase">Terisi</span>
+                                            <b class="text-sm text-teal-700">${stats.pondok.terisi}</b>
+                                        </div>
+                                        <div class="bg-white p-2 rounded-xl border border-teal-100 text-xs shadow-xs">
+                                            <span class="block text-emerald-600 font-bold text-[10px] uppercase">Sisa</span>
+                                            <b class="text-sm text-emerald-700">${stats.pondok.sisa}</b>
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-between text-[11px] font-bold text-gray-600 mb-1">
+                                        <span>Tingkat Keterisian</span>
+                                        <span class="text-teal-700 font-black">${stats.pondok.pct}%</span>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                        <div class="bg-teal-600 h-2.5 rounded-full transition-all duration-500" style="width: ${Math.min(100, stats.pondok.pct)}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CARD SEKTOR BARAK -->
+                            <div class="bg-gradient-to-br from-indigo-50/60 to-slate-50 p-5 rounded-2xl border border-indigo-200/80 shadow-xs flex flex-col justify-between">
+                                <div>
+                                    <div class="flex justify-between items-center mb-2.5">
+                                        <h5 class="font-extrabold text-indigo-950 text-sm flex items-center gap-1.5">
+                                            <span class="material-icons text-indigo-600">groups</span> Wisma Berjenis Barak
+                                        </h5>
+                                        <span class="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-full font-bold text-[11px]">Multi-Orang</span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mb-4 leading-relaxed">Ruang wisma berkapasitas besar menampung banyak penerima manfaat dalam 1 aula/ruang bersama.</p>
+                                </div>
+                                <div>
+                                    <div class="grid grid-cols-3 gap-2 text-center mb-3">
+                                        <div class="bg-white p-2 rounded-xl border border-indigo-100 text-xs shadow-xs">
+                                            <span class="block text-gray-400 font-bold text-[10px] uppercase">Kapasitas</span>
+                                            <b class="text-sm text-gray-800">${stats.barak.kapasitas}</b>
+                                        </div>
+                                        <div class="bg-white p-2 rounded-xl border border-indigo-100 text-xs shadow-xs">
+                                            <span class="block text-indigo-600 font-bold text-[10px] uppercase">Terisi</span>
+                                            <b class="text-sm text-indigo-700">${stats.barak.terisi}</b>
+                                        </div>
+                                        <div class="bg-white p-2 rounded-xl border border-indigo-100 text-xs shadow-xs">
+                                            <span class="block text-emerald-600 font-bold text-[10px] uppercase">Sisa</span>
+                                            <b class="text-sm text-emerald-700">${stats.barak.sisa}</b>
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-between text-[11px] font-bold text-gray-600 mb-1">
+                                        <span>Tingkat Keterisian</span>
+                                        <span class="text-indigo-700 font-black">${stats.barak.pct}%</span>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                        <div class="bg-indigo-600 h-2.5 rounded-full transition-all duration-500" style="width: ${Math.min(100, stats.barak.pct)}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CARD SEKTOR RUSUN (RUMAH SUSUN) -->
+                            <div class="bg-gradient-to-br from-amber-50/60 to-slate-50 p-5 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between">
+                                <div>
+                                    <div class="flex justify-between items-center mb-2.5">
+                                        <h5 class="font-extrabold text-amber-950 text-sm flex items-center gap-1.5">
+                                            <span class="material-icons text-amber-600">apartment</span> Wisma Berjenis Rusun
+                                        </h5>
+                                        <span class="px-2.5 py-0.5 bg-amber-100 text-amber-800 rounded-full font-bold text-[11px]">Hunian Mandiri</span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mb-4 leading-relaxed">Unit hunian vertikal / rumah susun bagi penerima manfaat persiapan terminasi atau mandiri.</p>
+                                </div>
+                                <div>
+                                    <div class="grid grid-cols-3 gap-2 text-center mb-3">
+                                        <div class="bg-white p-2 rounded-xl border border-amber-100 text-xs shadow-xs">
+                                            <span class="block text-gray-400 font-bold text-[10px] uppercase">Kapasitas</span>
+                                            <b class="text-sm text-gray-800">${stats.rusun.kapasitas}</b>
+                                        </div>
+                                        <div class="bg-white p-2 rounded-xl border border-amber-100 text-xs shadow-xs">
+                                            <span class="block text-amber-600 font-bold text-[10px] uppercase">Terisi</span>
+                                            <b class="text-sm text-amber-700">${stats.rusun.terisi}</b>
+                                        </div>
+                                        <div class="bg-white p-2 rounded-xl border border-amber-100 text-xs shadow-xs">
+                                            <span class="block text-emerald-600 font-bold text-[10px] uppercase">Sisa</span>
+                                            <b class="text-sm text-emerald-700">${stats.rusun.sisa}</b>
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-between text-[11px] font-bold text-gray-600 mb-1">
+                                        <span>Tingkat Keterisian</span>
+                                        <span class="text-amber-700 font-black">${stats.rusun.pct}%</span>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                        <div class="bg-amber-600 h-2.5 rounded-full transition-all duration-500" style="width: ${Math.min(100, stats.rusun.pct)}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (isPerPL) {
+                const wilayahKeys = ['PL1', 'PL2', 'PL3', 'Rusun'];
+                Object.keys(stats.perPL).forEach(k => {
+                    if (!wilayahKeys.includes(k)) wilayahKeys.push(k);
+                });
+
+                html += `
+                    <!-- VIEW 2: PER AREA (PL1, PL2, PL3, RUSUN) -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 animate-[fadeIn_0.2s]">
+                `;
+
+                wilayahKeys.forEach(pl => {
                     const plData = stats.perPL[pl] || { totalKapasitas: 0, totalTerisi: 0, wismaCount: 0 };
                     const sisa = Math.max(0, plData.totalKapasitas - plData.totalTerisi);
                     const pct = plData.totalKapasitas > 0 ? Math.round((plData.totalTerisi / plData.totalKapasitas) * 100) : 0;
 
-                    let colorTheme = pl === 'PL1' ? 'cyan' : (pl === 'PL2' ? 'purple' : 'emerald');
+                    let colorTheme = pl === 'PL1' ? 'cyan' : (pl === 'PL2' ? 'purple' : (pl === 'PL3' ? 'emerald' : 'amber'));
 
-                    card.innerHTML = `
-                        <div class="flex items-center justify-between border-b pb-3 mb-4">
-                            <div class="flex items-center gap-2">
-                                <span class="px-3 py-1 bg-${colorTheme}-100 text-${colorTheme}-800 font-extrabold text-sm rounded-lg">${pl}</span>
-                                <span class="text-xs text-gray-500 font-bold">${plData.wismaCount} Unit Wisma</span>
-                            </div>
-                            <span class="text-xs font-bold text-gray-600">${pct}% Okupansi</span>
-                        </div>
+                    html += `
+                        <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between border-b pb-3 mb-4">
+                                    <div class="flex items-center gap-2">
+                                        <span class="px-3 py-1 bg-${colorTheme}-100 text-${colorTheme}-800 font-extrabold text-sm rounded-lg">${pl}</span>
+                                        <span class="text-xs text-gray-500 font-bold">${plData.wismaCount} Unit Wisma</span>
+                                    </div>
+                                    <span class="text-xs font-bold text-gray-600">${pct}% Okupansi</span>
+                                </div>
 
-                        <div class="grid grid-cols-3 gap-2 text-center mb-4">
-                            <div class="bg-gray-50 p-2.5 rounded-xl border border-gray-100">
-                                <span class="text-[10px] text-gray-400 font-bold block uppercase">Kapasitas</span>
-                                <b class="text-base text-gray-900">${plData.totalKapasitas}</b>
+                                <div class="grid grid-cols-3 gap-2 text-center mb-4">
+                                    <div class="bg-gray-50 p-2.5 rounded-xl border border-gray-100">
+                                        <span class="text-[10px] text-gray-400 font-bold block uppercase">Kapasitas</span>
+                                        <b class="text-base text-gray-900">${plData.totalKapasitas}</b>
+                                    </div>
+                                    <div class="bg-cyan-50 p-2.5 rounded-xl border border-cyan-100">
+                                        <span class="text-[10px] text-cyan-600 font-bold block uppercase">Terisi</span>
+                                        <b class="text-base text-cyan-800">${plData.totalTerisi}</b>
+                                    </div>
+                                    <div class="bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
+                                        <span class="text-[10px] text-emerald-600 font-bold block uppercase">Sisa</span>
+                                        <b class="text-base text-emerald-800">${sisa}</b>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="bg-cyan-50 p-2.5 rounded-xl border border-cyan-100">
-                                <span class="text-[10px] text-cyan-600 font-bold block uppercase">Terisi</span>
-                                <b class="text-base text-cyan-800">${plData.totalTerisi}</b>
-                            </div>
-                            <div class="bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
-                                <span class="text-[10px] text-emerald-600 font-bold block uppercase">Sisa</span>
-                                <b class="text-base text-emerald-800">${sisa}</b>
-                            </div>
-                        </div>
 
-                        <div class="w-full bg-gray-100 rounded-full h-3">
-                            <div class="bg-${colorTheme}-600 h-3 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                            <div class="w-full bg-gray-100 rounded-full h-3">
+                                <div class="bg-${colorTheme}-600 h-3 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                            </div>
                         </div>
                     `;
-                }
-            });
+                });
 
-            const perWismaContainer = el('wismadash-content-per_wisma');
-            if (perWismaContainer) {
+                html += `</div>`;
+            } else if (isPerWisma) {
                 const wismaList = allWisma || [];
-                let html = '';
+                html += `
+                    <!-- VIEW 3: PER WISMA (GRID CARD DETIL) -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-[fadeIn_0.2s]">
+                `;
 
                 if (wismaList.length === 0) {
-                    html = `<div class="col-span-full p-8 text-center bg-white rounded-2xl border border-gray-200 text-gray-500 italic">Belum ada wisma/ruangan terdaftar di database. Silakan input data wisma baru pada menu Wisma.</div>`;
+                    html += `<div class="col-span-full p-8 text-center bg-white rounded-2xl border border-gray-200 text-gray-500 italic">Belum ada wisma/ruangan terdaftar di database. Silakan input data wisma baru pada menu Wisma.</div>`;
                 } else {
                     wismaList.forEach(w => {
                         const stat = stats.wismaStatsMap[w.id] || { terisi: 0, pmList: [] };
@@ -10718,23 +10843,29 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
                         let pmListHtml = '';
                         if (stat.pmList && stat.pmList.length > 0) {
-                            pmListHtml = '<ul class="mt-2 space-y-1 border-t pt-2 text-xs text-gray-700">';
+                            pmListHtml = '<ul class="mt-2 space-y-1 border-t pt-2 text-xs text-gray-700 max-h-40 overflow-y-auto custom-scrollbar">';
                             stat.pmList.forEach((pm, idx) => {
-                                pmListHtml += `<li class="flex justify-between items-center bg-gray-50 px-2 py-1 rounded"><span>${idx + 1}. <b>${pm.nama}</b></span><span class="text-[10px] text-gray-400">${pm.kluster || '-'}</span></li>`;
+                                pmListHtml += `<li class="flex justify-between items-center bg-gray-50 px-2.5 py-1.5 rounded border border-gray-100"><span>${idx + 1}. <b>${pm.nama}</b></span><span class="text-[10px] text-gray-500 bg-white px-1.5 py-0.5 rounded border">${pm.kluster || '-'}</span></li>`;
                             });
                             pmListHtml += '</ul>';
                         } else {
                             pmListHtml = '<p class="mt-2 pt-2 border-t text-[11px] text-gray-400 italic">Belum ada PM di wisma ini.</p>';
                         }
 
-                        const jenisLabel = w.jenis_wisma.includes('Barak') ? 'Barak' : 'Paviliun';
+                        const cat = getJenisWismaCategory(w);
+                        let jenisBadge = '<span class="px-2 py-0.5 bg-teal-50 text-teal-700 font-bold text-[11px] rounded border border-teal-200">Pondok</span>';
+                        if (cat === 'Barak') {
+                            jenisBadge = '<span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold text-[11px] rounded border border-indigo-200">Barak</span>';
+                        } else if (cat === 'Rusun') {
+                            jenisBadge = '<span class="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold text-[11px] rounded border border-amber-200">Rusun</span>';
+                        }
 
                         html += `
                             <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition">
                                 <div class="flex justify-between items-start mb-2">
                                     <div>
-                                        <span class="px-2 py-0.5 bg-gray-100 text-gray-800 font-extrabold text-[11px] rounded border mr-1">${w.wilayah || 'PL1'}</span>
-                                        <span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold text-[11px] rounded border">${jenisLabel}</span>
+                                        <span class="px-2 py-0.5 bg-gray-100 text-gray-800 font-black text-[11px] rounded border mr-1">${w.wilayah || 'PL1'}</span>
+                                        ${jenisBadge}
                                         <h5 class="font-bold text-gray-900 text-sm mt-1.5">${w.nama_wisma}</h5>
                                         <p class="text-xs text-gray-500">${w.nama_ruang || '-'}</p>
                                     </div>
@@ -10764,8 +10895,40 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                     });
                 }
 
-                perWismaContainer.innerHTML = html;
+                html += `</div>`;
+
+                // Tampilkan info PM aktif yang belum ditempatkan di wisma jika ada
+                if (stats.unassignedPMs && stats.unassignedPMs.length > 0) {
+                    html += `
+                        <div class="mt-6 bg-amber-50/70 border border-amber-200 rounded-2xl p-4 shadow-xs">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="material-icons text-amber-600 text-sm">info</span>
+                                <h6 class="text-xs font-bold text-amber-900 uppercase tracking-wider">PM Belum Ditempatkan di Wisma / Lokasi Mandiri (${stats.unassignedPMs.length} Orang)</h6>
+                            </div>
+                            <p class="text-[11px] text-amber-800 mb-3">PM berikut berstatus aktif namun lokasi penempatan wisma/kamar belum diatur atau bertipe mandiri/luar asrama.</p>
+                            <div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto custom-scrollbar">
+                    `;
+                    stats.unassignedPMs.forEach(p => {
+                        html += `<span class="px-2 py-1 bg-white border border-amber-200 rounded-lg text-xs font-semibold text-gray-800">${p.nama} <span class="text-[10px] text-gray-400">(${p.layanan || p.kluster || 'Residensial'})</span></span>`;
+                    });
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                }
             }
+
+            html += `</div>`;
+            return html;
+        }
+
+        function renderWismaOccupancyDashboard() {
+            const stats = getWismaOccupancyStats();
+            const dashHtml = buildWismaDashboardHTML(stats, currentWismaDashView);
+            const admCont = el('adm-content-keterisian');
+            if (admCont) admCont.innerHTML = dashHtml;
+            const pimCont = el('pim-content-wisma');
+            if (pimCont) pimCont.innerHTML = dashHtml;
         }
 
         function populateWismaSelectOptions(selectId, selectedVal = '') {
@@ -10778,7 +10941,13 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             let html = '<option value="">- Pilih Wisma Penempatan (Opsional) -</option>';
             html += '<option value="Belum Ditentukan" ' + (selectedVal === 'Belum Ditentukan' || !selectedVal ? 'selected' : '') + '>Belum Ditentukan (Default)</option>';
 
-            ['PL1', 'PL2', 'PL3'].forEach(pl => {
+            const wilayahList = ['PL1', 'PL2', 'PL3', 'Rusun'];
+            wismaList.forEach(w => {
+                const wil = (w.wilayah || 'PL1').toUpperCase();
+                if (wil && !wilayahList.includes(wil)) wilayahList.push(wil);
+            });
+
+            wilayahList.forEach(pl => {
                 const plItems = wismaList.filter(w => (w.wilayah || 'PL1').toUpperCase() === pl);
                 if (plItems.length > 0) {
                     html += `<optgroup label="--- Area ${pl} ---">`;
@@ -10787,7 +10956,8 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         const terisi = st.terisi;
                         const kap = Number(w.kapasitas || 0);
                         const isSelected = (selectedVal === w.nama_wisma || selectedVal === w.id || selectedVal.includes(w.nama_wisma)) ? 'selected' : '';
-                        const fullText = `${w.nama_wisma} (${w.jenis_wisma}) [Terisi: ${terisi}/${kap}]`;
+                        const cat = getJenisWismaCategory(w);
+                        const fullText = `${w.nama_wisma} (${cat}) [Terisi: ${terisi}/${kap}]`;
                         html += `<option value="${w.nama_wisma}" ${isSelected}>${fullText}</option>`;
                     });
                     html += `</optgroup>`;
