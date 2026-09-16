@@ -1625,6 +1625,10 @@
             const intervensiStr = d.intervensi || `(A): ${d.analisis || '-'} | (P): ${d.rencana || '-'}`;
 
             const docUrl = d.dokumen_url || d.fotoUrl || '';
+            const namaList = pmList.map(p => p.nama || p.id).filter(Boolean);
+            const pesertaNamas = namaList.length > 25
+                ? namaList.slice(0, 25).join(', ') + ` dan ${namaList.length - 25} PM lainnya`
+                : (namaList.join(', ') || '-');
             let catatanLengkap = d.catatan || `Sesi: ${d.topik || '-'}. Tempat: ${d.lokasi || 'Sentra Terpadu Pangudi Luhur Bekasi'}. Total Hadir: ${pmList.length} PM (${pesertaNamas}).`;
             if (d.catatan && !catatanLengkap.includes(d.catatan)) catatanLengkap += ` | Catatan: ${d.catatan}`;
             if (docUrl && !catatanLengkap.includes(docUrl)) catatanLengkap += ` | Dokumentasi: ${docUrl}`;
