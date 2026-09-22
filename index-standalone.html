@@ -31,6 +31,84 @@
             return url.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
         }
 
+        /* =====================================================================
+         * KEAMANAN SISTEM & SANITASI INPUT (ANTI-INJECTION & XSS SHIELD)
+         * ===================================================================== */
+
+        /**
+         * Escape string untuk rendering aman di HTML (Mencegah Stored XSS)
+         */
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        /**
+         * Membersihkan input teks dari kode berbahaya/ilegal sebelum disimpan ke database
+         */
+        function cleanInputText(str, maxLength = 5000) {
+            if (str === null || str === undefined) return '';
+            let val = String(str).trim();
+            // Hapus null bytes dan ASCII control characters berbahaya
+            val = val.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+            // Hapus tag script beserta isinya tanpa men-trigger HTML parser
+            const scriptTagRegex = new RegExp('<\\s*script\\b[\\s\\S]*?(?:<\\s*\\/\\s*script\\s*>|$)', 'gi');
+            val = val.replace(scriptTagRegex, '');
+            // Hapus event listener inline berbahaya (onload, onerror, onclick, onmouseover, dll)
+            val = val.replace(/on\w+\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi, '');
+            // Hapus iframe, object, embed, style, meta, link, svg berbahaya
+            val = val.replace(/<(iframe|object|embed|style|meta|link|svg)\b[^<]*(?:(?!<\/\1>)<[^<]*)*<\/\1>/gi, '');
+            // Batasi panjang maksimum
+            if (maxLength && val.length > maxLength) {
+                val = val.substring(0, maxLength);
+            }
+            return val;
+        }
+
+        /**
+         * Validasi dan sanitasi URL agar hanya mengizinkan protokol HTTP/HTTPS (Mencegah javascript: / data: URI attacks)
+         */
+        function sanitizeSafeUrl(rawUrl) {
+            if (!rawUrl) return '';
+            let val = String(rawUrl).trim();
+            // Hapus spasi dan kontrol tersembunyi di awal
+            val = val.replace(/^[\s\u0000-\u001F]+/g, '');
+            const lower = val.toLowerCase();
+            // Tolak protokol ilegal/berbahaya
+            if (lower.startsWith('javascript:') || 
+                lower.startsWith('vbscript:') || 
+                lower.startsWith('data:') || 
+                lower.startsWith('file:') ||
+                lower.includes('javascript&') ||
+                lower.includes('&#') ||
+                lower.includes('%6a%61%76%61')) {
+                console.warn("Peringatan Keamanan: URL dengan protokol ilegal diblokir:", rawUrl);
+                return '';
+            }
+            // Tambahkan https:// jika user mengetik alamat tanpa protokol (misal: drive.google.com/...)
+            if (!/^https?:\/\//i.test(val)) {
+                if (/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\/.*)?$/i.test(val)) {
+                    val = 'https://' + val;
+                } else {
+                    return '';
+                }
+            }
+            try {
+                const parsed = new URL(val);
+                if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                    return '';
+                }
+                return parsed.href;
+            } catch (e) {
+                return '';
+            }
+        }
+
         let DEFAULT_SUPABASE_URL = cleanSupabaseUrl(localStorage.getItem(STORAGE_KEY_URL) || HARDCODED_URL);
         let DEFAULT_SUPABASE_ANON_KEY = localStorage.getItem(STORAGE_KEY_ANON) || HARDCODED_ANON;
 
@@ -609,25 +687,26 @@
             const client = getSupabase();
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
-            let newId = d.id;
+            let newId = cleanInputText(d.id, 50);
             if (!newId) {
                 newId = 'PM-' + new Date().getFullYear() + '-' + Date.now();
             }
 
-            const cleanNik = d.nik ? String(d.nik).trim().replace(/^'/, '') : '';
+            const cleanNik = d.nik ? String(d.nik).trim().replace(/[^\d]/g, '') : '';
+            const cleanNama = cleanInputText(d.nama, 150);
 
             const payload = {
                 id: newId,
                 nik: cleanNik,
-                nama: d.nama,
+                nama: cleanNama,
                 tgl_masuk: new Date().toISOString(),
                 tgl_masuk_pertama: d.tglMasukPertama || new Date().toISOString(),
                 status: 'Menunggu PJ',
                 pj: '-',
-                foto_url: d.fotoUrl || '',
-                ktp_url: d.ktpUrl || '',
-                bast_url: d.bastUrl || '',
-                pernyataan_url: d.pernyataanUrl || '',
+                foto_url: sanitizeSafeUrl(d.fotoUrl) || d.fotoUrl || '',
+                ktp_url: sanitizeSafeUrl(d.ktpUrl) || d.ktpUrl || '',
+                bast_url: sanitizeSafeUrl(d.bastUrl) || d.bastUrl || '',
+                pernyataan_url: sanitizeSafeUrl(d.pernyataanUrl) || d.pernyataanUrl || '',
                 alasan_terminasi: '',
                 layanan: 'Residensial'
             };
@@ -851,15 +930,16 @@
 
             return (data || []).map(row => {
                 let dokLink = '';
-                const dUrl = row.dokumen_url || (row.catatan && row.catatan.match(/Dokumentasi:\s*(https?:\/\/[^\s|]+)/)?.[1]);
-                if (dUrl) {
-                    dokLink = `<div class="mt-1.5"><a href="${dUrl}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded transition shadow-2xs"><span class="material-icons text-xs text-blue-600">attachment</span> Buka Link Dokumentasi</a></div>`;
+                const rawDUrl = row.dokumen_url || (row.catatan && row.catatan.match(/Dokumentasi:\s*(https?:\/\/[^\s|]+)/)?.[1]);
+                const safeDUrl = sanitizeSafeUrl(rawDUrl);
+                if (safeDUrl) {
+                    dokLink = `<div class="mt-1.5"><a href="${safeDUrl}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded transition shadow-2xs"><span class="material-icons text-xs text-blue-600">attachment</span> Buka Link Dokumentasi</a></div>`;
                 }
                 return {
                     timestamp: formatDateStandard(row.timestamp, true),
-                    role: row.role,
-                    petugas: row.petugas,
-                    text: `<b>${row.kondisi || ''}</b><br><b>${row.intervensi || ''}</b><br><i>${row.catatan || ''}</i>${dokLink}`
+                    role: escapeHtml(row.role || ''),
+                    petugas: escapeHtml(row.petugas || ''),
+                    text: `<b>${escapeHtml(row.kondisi || '')}</b><br><b>${escapeHtml(row.intervensi || '')}</b><br><i>${escapeHtml(row.catatan || '')}</i>${dokLink}`
                 };
             });
         }
@@ -868,20 +948,25 @@
             const client = getSupabase();
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
+            const safeKondisi = cleanInputText(d.kondisi, 3000);
+            const safeIntervensi = cleanInputText(d.intervensi, 3000);
+            const safeCatatan = cleanInputText(d.catatan, 3000);
+            const safeDokUrl = sanitizeSafeUrl(d.dokumen_url);
+
             const idLog = 'LOG-' + Date.now();
             const payload = {
                 id_log: idLog,
                 timestamp: new Date().toISOString(),
-                id_pm: d.id,
-                nama_pm: d.nama,
-                role: d.role,
-                petugas: d.petugas,
-                kondisi: d.kondisi,
-                intervensi: d.intervensi,
-                catatan: d.catatan
+                id_pm: cleanInputText(d.id, 100),
+                nama_pm: cleanInputText(d.nama, 200),
+                role: cleanInputText(d.role, 100),
+                petugas: cleanInputText(d.petugas, 200),
+                kondisi: safeKondisi,
+                intervensi: safeIntervensi,
+                catatan: safeCatatan
             };
-            if (d.dokumen_url) {
-                payload.dokumen_url = d.dokumen_url;
+            if (safeDokUrl) {
+                payload.dokumen_url = safeDokUrl;
             }
 
             const { error } = await client.from('jurnal_layanan').insert(payload);
@@ -1633,21 +1718,26 @@
             if (d.catatan && !catatanLengkap.includes(d.catatan)) catatanLengkap += ` | Catatan: ${d.catatan}`;
             if (docUrl && !catatanLengkap.includes(docUrl)) catatanLengkap += ` | Dokumentasi: ${docUrl}`;
 
+            const safeDocUrl = sanitizeSafeUrl(d.dokumen_url || d.fotoUrl || '');
+            const safeKondisiStr = cleanInputText(kondisiStr, 3000);
+            const safeIntervensiStr = cleanInputText(intervensiStr, 3000);
+            const safeCatatanLengkap = cleanInputText(catatanLengkap, 4000);
+
             const payloads = pmList.map((item, idx) => {
                 const idLog = 'JRN-BLAST-' + Date.now() + '-' + idx + '-' + Math.random().toString(36).substring(2, 7);
                 const row = {
                     id_log: idLog,
                     timestamp: timestampIso,
-                    id_pm: item.id,
-                    nama_pm: item.nama,
-                    role: roleStr,
-                    petugas: petugasStr,
-                    kondisi: kondisiStr,
-                    intervensi: intervensiStr,
-                    catatan: catatanLengkap
+                    id_pm: cleanInputText(item.id, 100),
+                    nama_pm: cleanInputText(item.nama, 200),
+                    role: cleanInputText(roleStr, 100),
+                    petugas: cleanInputText(petugasStr, 200),
+                    kondisi: safeKondisiStr,
+                    intervensi: safeIntervensiStr,
+                    catatan: safeCatatanLengkap
                 };
-                if (docUrl) {
-                    row.dokumen_url = docUrl;
+                if (safeDocUrl) {
+                    row.dokumen_url = safeDocUrl;
                 }
                 return row;
             });
@@ -1793,15 +1883,19 @@
          * Simpan / Perbarui data akun pengguna di Supabase
          */
         async function dbSimpanUser(d) {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                throw new Error("Akses Ditolak: Hanya Super Admin yang memiliki hak mengelola akun pengguna.");
+            }
             const client = getSupabase();
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
-            const cleanUsername = String(d.username || '').trim();
-            const cleanNama = String(d.nama || '').trim();
+            const cleanUsername = cleanInputText(d.username, 50).toLowerCase().replace(/[^a-z0-9._-]/g, '');
+            const cleanNama = cleanInputText(d.nama, 150);
             const cleanPassword = String(d.password || '').trim();
-            const roles = Array.isArray(d.roles) ? d.roles : (d.roles ? [d.roles] : []);
+            const roles = Array.isArray(d.roles) ? d.roles.map(r => cleanInputText(r, 50)) : (d.roles ? [cleanInputText(d.roles, 50)] : []);
 
-            if (!cleanUsername) throw new Error("Username login wajib diisi!");
+            if (!cleanUsername || cleanUsername.length < 3) throw new Error("Username login harus alfanumerik (huruf/angka/titik/strip) minimal 3 karakter!");
             if (!cleanNama) throw new Error("Nama Petugas wajib diisi!");
             if (!cleanPassword) throw new Error("Password wajib diisi!");
             if (roles.length === 0) throw new Error("Pilih minimal 1 Role / Hak Akses Petugas!");
@@ -1873,6 +1967,10 @@
          * Hapus akun pengguna dari Supabase
          */
         async function dbDeleteUser(id, username) {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                throw new Error("Akses Ditolak: Hanya Super Admin yang memiliki hak menghapus akun pengguna.");
+            }
             const client = getSupabase();
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
@@ -1904,6 +2002,10 @@
          * Fitur Sekali Klik Ekspor Seluruh Tabel Database ke 1 File Excel Multi-Sheet (SheetJS)
          */
         async function executeExportAllTablesToExcel() {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                return myAlert("Akses Ditolak: Fitur Ekspor Seluruh Tabel Database hanya dapat diakses oleh Super Admin.");
+            }
             showLoad(true);
             try {
                 const tables = [
@@ -3792,15 +3894,21 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                             <span
                                 class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1.5">Manajemen
                                 & Supervisi:</span>
-                            <div class="grid grid-cols-2 gap-2">
+                            <div class="grid grid-cols-3 gap-2">
                                 <label
-                                    class="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200 hover:bg-slate-100 cursor-pointer transition text-xs font-semibold">
+                                    class="flex items-center gap-1.5 p-2 bg-amber-50/70 rounded-lg border border-amber-200 hover:bg-amber-100/70 cursor-pointer transition text-xs font-semibold">
+                                    <input type="checkbox" name="user-role-opt" value="Super Admin"
+                                        class="w-4 h-4 text-amber-600 rounded">
+                                    <span class="text-amber-950 font-bold">Super Admin</span>
+                                </label>
+                                <label
+                                    class="flex items-center gap-1.5 p-2 bg-white rounded-lg border border-gray-200 hover:bg-slate-100 cursor-pointer transition text-xs font-semibold">
                                     <input type="checkbox" name="user-role-opt" value="Admin"
                                         class="w-4 h-4 text-purple-600 rounded">
                                     <span class="text-purple-900">Admin</span>
                                 </label>
                                 <label
-                                    class="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200 hover:bg-slate-100 cursor-pointer transition text-xs font-semibold">
+                                    class="flex items-center gap-1.5 p-2 bg-white rounded-lg border border-gray-200 hover:bg-slate-100 cursor-pointer transition text-xs font-semibold">
                                     <input type="checkbox" name="user-role-opt" value="Pimpinan"
                                         class="w-4 h-4 text-cyan-600 rounded">
                                     <span class="text-cyan-900">Pimpinan</span>
@@ -4043,6 +4151,112 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         </div>
     </div>
 
+    <!-- MODAL 10: DETAIL AKTIVITAS & PRATINJAU FOTO DOKUMENTASI JURNAL (ROLE PIMPINAN) -->
+    <div id="modal-kinerja-detail" class="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center hidden z-50 p-4">
+        <div class="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto border border-gray-100 space-y-5">
+            <!-- Modal Header -->
+            <div class="flex justify-between items-start pb-4 border-b border-gray-100">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 bg-emerald-100 text-emerald-800 rounded-2xl">
+                        <span class="material-icons text-2xl">verified</span>
+                    </div>
+                    <div>
+                        <h3 class="font-black text-lg text-slate-900 leading-tight">Detail Aktivitas & Dokumentasi Jurnal</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Verifikasi riwayat pelayanan & bukti dokumentasi staf SIMRES</p>
+                    </div>
+                </div>
+                <button onclick="tutupModalDetailKinerja()" class="text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100 transition cursor-pointer">
+                    <span class="material-icons text-xl">close</span>
+                </button>
+            </div>
+
+            <!-- Petugas & PM Info Cards Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <!-- Petugas Card -->
+                <div class="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">Petugas Pelaksana:</span>
+                    <div class="flex items-center gap-2">
+                        <span id="mkd-petugas" class="font-extrabold text-sm text-slate-800">-</span>
+                        <span id="mkd-role-badge" class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800">-</span>
+                    </div>
+                    <div class="text-[11px] text-slate-500 flex items-center gap-1 mt-1">
+                        <span class="material-icons text-[14px]">schedule</span>
+                        <span id="mkd-waktu">-</span>
+                    </div>
+                </div>
+
+                <!-- PM Card -->
+                <div class="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">Penerima Manfaat (PM):</span>
+                    <div class="flex items-center gap-2">
+                        <span id="mkd-nama-pm" class="font-extrabold text-sm text-slate-800">-</span>
+                        <span id="mkd-id-pm" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-700">-</span>
+                    </div>
+                    <div class="text-[11px] text-slate-500 flex items-center gap-1 mt-1">
+                        <span class="material-icons text-[14px]">label</span>
+                        <span id="mkd-klaster">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pelayanan & SOAP Details -->
+            <div class="space-y-3 bg-white p-4 rounded-2xl border border-gray-200">
+                <div>
+                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">Kondisi PM / Topik Kegiatan:</span>
+                    <div id="mkd-kondisi" class="text-xs text-slate-800 font-medium bg-slate-50 p-3 rounded-xl border border-slate-100 leading-relaxed whitespace-pre-wrap">-</div>
+                </div>
+                <div>
+                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">Intervensi / Pelayanan yang Diberikan:</span>
+                    <div id="mkd-intervensi" class="text-xs text-slate-800 font-medium bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 leading-relaxed whitespace-pre-wrap">-</div>
+                </div>
+                <div>
+                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">Catatan Tambahan / Evaluasi / Rekomendasi:</span>
+                    <div id="mkd-catatan" class="text-xs text-slate-700 italic bg-slate-50 p-3 rounded-xl border border-slate-100 leading-relaxed whitespace-pre-wrap">-</div>
+                </div>
+            </div>
+
+            <!-- Bagian Bukti Foto & Dokumentasi -->
+            <div class="bg-gradient-to-b from-slate-50 to-emerald-50/20 p-4 rounded-2xl border border-emerald-100 space-y-3">
+                <div class="flex justify-between items-center">
+                    <span class="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                        <span class="material-icons text-emerald-600 text-base">photo_library</span>
+                        Bukti Foto & Lampiran Dokumentasi
+                    </span>
+                    <span id="mkd-status-foto" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">Lampiran Tersedia</span>
+                </div>
+
+                <!-- Preview Area -->
+                <div id="mkd-preview-area" class="text-center py-2">
+                    <!-- Image tag or placeholder dynamically rendered -->
+                </div>
+
+                <!-- Action links for document -->
+                <div id="mkd-action-links" class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                    <div class="truncate text-xs text-slate-500 max-w-sm" id="mkd-raw-url-container">
+                        <span class="font-bold">Link:</span> <span id="mkd-raw-url" class="truncate font-mono text-[11px] text-blue-600">-</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="salinLinkDokumenKinerja()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1 cursor-pointer">
+                            <span class="material-icons text-xs">content_copy</span> Salin Link
+                        </button>
+                        <a id="mkd-external-btn" href="#" target="_blank" rel="noopener noreferrer"
+                            class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-xs cursor-pointer">
+                            <span class="material-icons text-xs">open_in_new</span> Buka Tautan Dokumen / Foto
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer Close -->
+            <div class="pt-2 flex justify-end">
+                <button onclick="tutupModalDetailKinerja()"
+                    class="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition shadow-sm active:scale-95 cursor-pointer">
+                    Tutup Jendela
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- NAVBAR -->
     <div id="navbar" class="bg-dark text-white shadow-lg sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -4135,8 +4349,8 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                     class="hidden mt-4 bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-xs text-yellow-800 text-left animate-[fadeIn_0.3s]">
                     <p class="font-bold mb-2">Akses Role SIMRES:</p>
                     <ul class="list-disc pl-4 space-y-1 opacity-90">
-                        <li><b>Admin</b>, <b>Pimpinan</b>, <b>Pekerja Sosial (Manajer Kasus)</b></li>
-                        <li><b>Dokter</b>, <b>Perawat</b>, <b>Psikolog</b>, <b>Instruktur</b>, <b>Penyuluh</b></li>
+                        <li><b>Super Admin</b>, <b>Admin</b>, <b>Pimpinan</b>, <b>Pekerja Sosial (Manajer Kasus)</b></li>
+                        <li><b>Dokter</b>, <b>Perawat</b>, <b>Psikolog</b>, <b>Instruktur</b>, <b>Penyuluh</b>, <b>Caregiver</b></li>
                     </ul>
                 </div>
             </div>
@@ -4153,17 +4367,17 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         <!-- ADMIN -->
         <div id="view-admin" class="view-section">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                <h3 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <h3 id="admin-dashboard-title" class="text-2xl font-bold text-gray-800 flex items-center gap-2">
                     <span class="material-icons text-primary">admin_panel_settings</span> Admin Dashboard
                 </h3>
                 <div class="flex flex-wrap gap-2">
-                    <button onclick="executeExportAllTablesToExcel()"
-                        class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow flex items-center gap-1.5 transition active:scale-95"
+                    <button id="btn-export-all-tables" onclick="executeExportAllTablesToExcel()"
+                        class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
                         title="Download seluruh 9 tabel database Supabase dalam 1 kali klik">
                         <span class="material-icons text-sm">cloud_download</span> Download Semua Tabel (Excel)
                     </button>
-                    <button onclick="openModalPanduanSQL()"
-                        class="bg-slate-800 hover:bg-slate-900 text-emerald-400 px-3.5 py-2 rounded-xl text-xs font-bold shadow border border-slate-700 flex items-center gap-1.5 transition active:scale-95"
+                    <button id="btn-walkthrough-sql" onclick="openModalPanduanSQL()"
+                        class="bg-slate-800 hover:bg-slate-900 text-emerald-400 px-3.5 py-2 rounded-xl text-xs font-bold shadow border border-slate-700 flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
                         title="Buka script SQL migrasi untuk Supabase">
                         <span class="material-icons text-sm">terminal</span> Walkthrough SQL
                     </button>
@@ -4171,7 +4385,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             </div>
 
             <!-- ADMIN SUB-TABS -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+            <div id="admin-subtabs-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
                 <button onclick="switchAdminTab('pm')" id="adm-tab-pm" class="tab-btn active-tab">
                     <span class="material-icons mb-1">groups</span>
                     <span class="text-xs font-bold">Registrasi & Data PPKS</span>
@@ -4502,7 +4716,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 mb-6">
                 <button onclick="switchPimTab('tugas')" id="pim-tab-tugas" class="tab-btn active-tab">
                     <span class="material-icons mb-1">assignment_ind</span>
                     <span class="text-xs font-bold">Penugasan PJ</span>
@@ -4526,6 +4740,10 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 <button onclick="switchPimTab('wisma')" id="pim-tab-wisma" class="tab-btn">
                     <span class="material-icons mb-1">domain</span>
                     <span class="text-xs font-bold">Okupansi Wisma</span>
+                </button>
+                <button onclick="switchPimTab('kinerja')" id="pim-tab-kinerja" class="tab-btn bg-emerald-50/50 hover:bg-emerald-100/50 border border-emerald-200/60">
+                    <span class="material-icons mb-1 text-emerald-600">badge</span>
+                    <span class="text-xs font-bold text-emerald-950">Kinerja Pegawai</span>
                 </button>
             </div>
 
@@ -4968,6 +5186,227 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
             <!-- TAB PIMPINAN 6: DASHBOARD OKUPANSI WISMA -->
             <div id="pim-content-wisma" class="space-y-6 hidden"></div>
+
+            <!-- TAB PIMPINAN 7: MONITORING KINERJA PEGAWAI & RIWAYAT AKTIVITAS JURNAL -->
+            <div id="pim-content-kinerja" class="space-y-6 hidden">
+                <!-- BANNER HEADER EKSEKUTIF -->
+                <div class="bg-gradient-to-r from-emerald-800 via-teal-700 to-cyan-800 rounded-2xl p-6 text-white shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <div class="flex items-center gap-3">
+                            <span class="p-2.5 bg-white/15 backdrop-blur rounded-xl shadow-inner">
+                                <span class="material-icons text-emerald-200 text-3xl">badge</span>
+                            </span>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h4 class="text-xl font-black tracking-wide text-white">Monitoring Kinerja & Riwayat Aktivitas Pegawai</h4>
+                                    <span class="text-[10px] uppercase font-bold tracking-wider text-emerald-100 bg-emerald-950/40 px-2.5 py-0.5 rounded-full border border-emerald-300/30">Wewenang Pimpinan</span>
+                                </div>
+                                <p class="text-xs text-emerald-100 mt-1 max-w-2xl leading-relaxed">
+                                    Pantau rekapitulasi pelayanan, kepatuhan input jurnal harian, dan verifikasi bukti foto/dokumentasi seluruh Pekerja Sosial, Penyuluh Sosial, Caregiver, Instruktur Vokasional, serta Tenaga Medis/Kesehatan secara terpadu.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 shrink-0">
+                        <button onclick="exportKinerjaToExcel()"
+                            class="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 px-4 py-2.5 rounded-xl text-xs font-black shadow-md hover:shadow-lg transition flex items-center gap-1.5 active:scale-95 cursor-pointer">
+                            <span class="material-icons text-sm">file_download</span>
+                            <span>Download Laporan Excel</span>
+                        </button>
+                        <button onclick="refreshKinerjaData()"
+                            class="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-3 py-2.5 rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1 active:scale-95 cursor-pointer"
+                            title="Segarkan data riwayat aktivitas pegawai">
+                            <span class="material-icons text-sm">sync</span>
+                            <span class="hidden sm:inline">Refresh Data</span>
+                        </button>
+                        <button onclick="window.print()"
+                            class="bg-white/15 hover:bg-white/25 text-white border border-white/25 p-2.5 rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1 active:scale-95 cursor-pointer"
+                            title="Cetak tampilan laporan kinerja">
+                            <span class="material-icons text-sm">print</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- KARTU METRIK UTAMA (KPI SUMMARY) -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+                        <div>
+                            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Total Aktivitas Jurnal</span>
+                            <h4 id="kinerja-kpi-total" class="text-2xl font-black text-gray-800 mt-1">0</h4>
+                            <span class="text-[10px] text-gray-500 font-medium">Log tindakan pelayanan tercatat</span>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                            <span class="material-icons text-2xl">receipt_long</span>
+                        </div>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+                        <div>
+                            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Pegawai Berkontribusi</span>
+                            <h4 id="kinerja-kpi-pegawai" class="text-2xl font-black text-emerald-600 mt-1">0 <span id="kinerja-kpi-pegawai-total" class="text-xs text-gray-400 font-normal">/ 0 Staf</span></h4>
+                            <span class="text-[10px] text-gray-500 font-medium">Staf yang telah menginput jurnal</span>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                            <span class="material-icons text-2xl">groups</span>
+                        </div>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+                        <div>
+                            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Dokumentasi Foto</span>
+                            <h4 id="kinerja-kpi-foto" class="text-2xl font-black text-teal-600 mt-1">0 <span id="kinerja-kpi-foto-pct" class="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 font-bold ml-1">0%</span></h4>
+                            <span class="text-[10px] text-gray-500 font-medium">Jurnal dengan bukti foto kegiatan</span>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
+                            <span class="material-icons text-2xl">photo_camera</span>
+                        </div>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+                        <div>
+                            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Aktivitas Hari Ini</span>
+                            <h4 id="kinerja-kpi-today" class="text-2xl font-black text-amber-600 mt-1">0</h4>
+                            <span class="text-[10px] text-gray-500 font-medium">Pelayanan diinput hari ini</span>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                            <span class="material-icons text-2xl">today</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FILTER PANEL & VIEW MODE SWITCHER -->
+                <div class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4">
+                    <div class="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
+                        <!-- Mode Tampilan Switcher (Tabs) -->
+                        <div class="inline-flex p-1 bg-slate-100 rounded-xl self-start">
+                            <button id="btn-kinerja-view-rekap" onclick="switchKinerjaViewMode('rekap')"
+                                class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-white text-emerald-900 shadow-xs">
+                                <span class="material-icons text-sm">dashboard</span>
+                                <span>Rekap per Pegawai</span>
+                            </button>
+                            <button id="btn-kinerja-view-riwayat" onclick="switchKinerjaViewMode('riwayat')"
+                                class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-gray-600 hover:text-gray-900">
+                                <span class="material-icons text-sm">history_edu</span>
+                                <span>Riwayat Aktivitas & Feed Foto</span>
+                                <span id="badge-count-riwayat" class="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full font-extrabold ml-1">0</span>
+                            </button>
+                        </div>
+
+                        <!-- Search Bar -->
+                        <div class="relative flex-1 max-w-md">
+                            <span class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-base pointer-events-none">search</span>
+                            <input type="text" id="filter-kinerja-search" oninput="applyKinerjaFilter()"
+                                placeholder="Cari nama pegawai, nama PM, topik, catatan..."
+                                class="w-full pl-9 pr-8 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none transition">
+                            <button onclick="clearKinerjaSearch()" id="btn-clear-kinerja-search" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                <span class="material-icons text-xs">cancel</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Dropdown Filters -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-gray-100 items-center">
+                        <div>
+                            <label class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">Filter Pegawai:</label>
+                            <select id="filter-kinerja-pegawai" onchange="applyKinerjaFilter()"
+                                class="w-full px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500">
+                                <option value="ALL">Semua Pegawai & Staf</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">Filter Role / Profesi:</label>
+                            <select id="filter-kinerja-role" onchange="applyKinerjaFilter()"
+                                class="w-full px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500">
+                                <option value="ALL">Semua Role / Jabatan</option>
+                                <option value="Pekerja Sosial">Pekerja Sosial (Peksos)</option>
+                                <option value="Penyuluh Sosial">Penyuluh Sosial (Pensos)</option>
+                                <option value="Caregiver">Caregiver (Pengasuh)</option>
+                                <option value="Instruktur">Instruktur Vokasional</option>
+                                <option value="Medis">Tenaga Kesehatan (Dokter/Perawat)</option>
+                                <option value="Psikolog">Psikolog Klinis</option>
+                                <option value="Terapis">Terapis (Fisio/Wicara/Okupasi)</option>
+                                <option value="Pimpinan">Pimpinan</option>
+                                <option value="Admin">Admin</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">Periode Waktu:</label>
+                            <select id="filter-kinerja-waktu" onchange="handleKinerjaWaktuChange()"
+                                class="w-full px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500">
+                                <option value="7hari">7 Hari Terakhir</option>
+                                <option value="today">Hari Ini</option>
+                                <option value="30hari">30 Hari Terakhir</option>
+                                <option value="bulan_ini">Bulan Ini</option>
+                                <option value="all">Semua Waktu (Seluruh Riwayat)</option>
+                                <option value="custom">Rentang Tanggal Khusus...</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2 pt-4 sm:pt-0">
+                            <label class="flex items-center gap-2 p-2 bg-emerald-50/70 hover:bg-emerald-50 border border-emerald-200/80 rounded-xl cursor-pointer transition w-full">
+                                <input type="checkbox" id="filter-kinerja-foto-only" onchange="applyKinerjaFilter()"
+                                    class="w-4 h-4 text-emerald-600 rounded">
+                                <span class="text-xs font-bold text-emerald-950 flex items-center gap-1">
+                                    <span class="material-icons text-xs text-emerald-600">photo_camera</span>
+                                    Hanya dengan Foto / Bukti
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Input Rentang Tanggal Custom (Hidden By Default) -->
+                    <div id="filter-kinerja-custom-date" class="hidden p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex flex-wrap items-center gap-3">
+                        <span class="text-xs font-bold text-amber-900 flex items-center gap-1">
+                            <span class="material-icons text-sm">date_range</span> Pilih Rentang Tanggal:
+                        </span>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-gray-600 font-medium">Dari:</span>
+                            <input type="date" id="filter-kinerja-start" onchange="applyKinerjaFilter()" class="px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs">
+                            <span class="text-gray-600 font-medium">Sampai:</span>
+                            <input type="date" id="filter-kinerja-end" onchange="applyKinerjaFilter()" class="px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs">
+                        </div>
+                    </div>
+
+                    <!-- Info Bar & Tombol Reset -->
+                    <div class="flex justify-between items-center text-xs text-gray-500 pt-1">
+                        <span id="kinerja-filter-status-text">Memuat data aktivitas pegawai...</span>
+                        <button onclick="resetKinerjaFilter()" class="text-emerald-700 font-bold hover:underline flex items-center gap-0.5">
+                            <span class="material-icons text-xs">restart_alt</span> Reset Semua Filter
+                        </button>
+                    </div>
+                </div>
+
+                <!-- TAMPILAN 1: REKAP KINERJA PER PEGAWAI (CARDS GRID) -->
+                <div id="kinerja-container-rekap" class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h5 class="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <span class="material-icons text-emerald-600 text-base">co_present</span>
+                            Ringkasan Produktivitas Seluruh Pegawai SIMRES
+                        </h5>
+                        <span id="kinerja-rekap-count-badge" class="text-xs text-slate-500 font-semibold">Menampilkan data...</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="kinerja-pegawai-cards">
+                        <!-- Populated by renderKinerjaCards() -->
+                    </div>
+                </div>
+
+                <!-- TAMPILAN 2: FEED & TABEL RIWAYAT AKTIVITAS LENGKAP -->
+                <div id="kinerja-container-riwayat" class="hidden space-y-4">
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="p-4 bg-slate-50 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <div>
+                                <h5 class="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                    <span class="material-icons text-emerald-600 text-base">format_list_bulleted</span>
+                                    Log Kronologis Seluruh Riwayat Aktivitas & Bukti Foto
+                                </h5>
+                                <p class="text-[11px] text-gray-500 mt-0.5">Urutan aktivitas terbaru yang dilakukan pegawai untuk PM</p>
+                            </div>
+                            <span id="kinerja-riwayat-count-badge" class="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">0 Riwayat Terpilih</span>
+                        </div>
+                        <div class="overflow-x-auto table-wrap p-0">
+                            <table class="min-w-full divide-y divide-gray-200" id="tbl-kinerja-riwayat">
+                                <!-- Populated by renderKinerjaTable() -->
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- PEKERJA SOSIAL -->
@@ -5476,13 +5915,11 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                     <div>
                         <label class="lbl flex items-center justify-between">
                             <span class="flex items-center gap-1.5"><span
-                                    class="material-icons text-sm text-primary">link</span> Link Dokumentasi Kegiatan /
-                                Foto</span>
-                            <span class="text-[10px] text-gray-400 font-normal">Opsional (Google Drive / Cloud
-                                URL)</span>
+                                    class="material-icons text-sm text-primary">link</span> Link Dokumentasi Kegiatan / Foto Jurnal</span>
+                            <span class="text-[10px] text-gray-400 font-normal">Tautan Google Drive / Cloud URL</span>
                         </label>
                         <input type="url" id="jr-dokumen"
-                            placeholder="https://drive.google.com/... atau tautan dokumentasi kegiatan"
+                            placeholder="https://drive.google.com/... atau tautan foto kegiatan"
                             class="input-field text-xs bg-slate-50 focus:bg-white">
                     </div>
                 </div>
@@ -6211,6 +6648,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         case 'getAllUsers': return await dbGetAllUsers();
                         case 'simpanUser': return await dbSimpanUser(data);
                         case 'deleteUser': return await dbDeleteUser(data.id, data.username);
+                        case 'getMonitoringKinerjaData': return await dbGetMonitoringKinerjaData(data ? data.forceRefresh : false);
                     }
                 } catch (supaErr) {
                     console.error("Supabase API Call Error:", supaErr);
@@ -6406,12 +6844,12 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             el('user-display-role').innerText = role;
             el('btn-change-role').style.display = (currentUser.raw && currentUser.raw.roles.length > 1) ? 'flex' : 'none';
 
-            // HANYA ROLE ADMIN YANG DAPAT MELIHAT "IMPOR & EKSPOR EXCEL" DAN "PENGATURAN SUPABASE"
-            const isAdmin = role.trim().toLowerCase() === 'admin';
+            // HANYA ROLE SUPER ADMIN YANG DAPAT MELIHAT "IMPOR & EKSPOR EXCEL" DAN "PENGATURAN SUPABASE"
+            const isSuper = role.trim().toLowerCase() === 'super admin';
             const btnImport = el('btn-import-excel-nav');
             const btnSettings = el('btn-supabase-settings-nav');
-            if (btnImport) btnImport.style.display = isAdmin ? 'flex' : 'none';
-            if (btnSettings) btnSettings.style.display = isAdmin ? 'flex' : 'none';
+            if (btnImport) btnImport.style.display = isSuper ? 'flex' : 'none';
+            if (btnSettings) btnSettings.style.display = isSuper ? 'flex' : 'none';
 
             refreshData();
         }
@@ -6439,7 +6877,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         function renderViews() {
             const r = currentUser.role.toLowerCase();
-            if (r === 'admin') { renderAdmin(); nav('view-admin'); }
+            if (r === 'admin' || r === 'super admin') { renderAdmin(); nav('view-admin'); }
             else if (r === 'pimpinan') { renderPimpinan(); nav('view-pimpinan'); }
             else if (r === 'pekerja sosial') { renderPekerjaSosial(); nav('view-pekerja-sosial'); }
             else if (r === 'caregiver') { renderCaregiver(); nav('view-caregiver'); }
@@ -6541,6 +6979,43 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         // --- RENDERER WITH SMART FILTER INTEGRATION ---
         function renderAdmin() {
+            const isSuper = (currentUser.role || '').toLowerCase().trim() === 'super admin';
+
+            // Update Dashboard Title
+            const titleEl = el('admin-dashboard-title');
+            if (titleEl) {
+                if (isSuper) {
+                    titleEl.innerHTML = `<span class="material-icons text-amber-500">security</span> Super Admin Dashboard`;
+                } else {
+                    titleEl.innerHTML = `<span class="material-icons text-primary">admin_panel_settings</span> Admin Dashboard (Operasional)`;
+                }
+            }
+
+            // Tampilkan / sembunyikan tombol Download Semua Tabel dan Walkthrough SQL
+            const btnExportAll = el('btn-export-all-tables');
+            const btnWalkthrough = el('btn-walkthrough-sql');
+            if (btnExportAll) btnExportAll.style.display = isSuper ? 'flex' : 'none';
+            if (btnWalkthrough) btnWalkthrough.style.display = isSuper ? 'flex' : 'none';
+
+            // Tampilkan / sembunyikan tab Manajemen User
+            const tabUsers = el('adm-tab-users');
+            const contentUsers = el('adm-content-users');
+            const subtabsGrid = el('admin-subtabs-grid');
+            if (tabUsers) tabUsers.style.display = isSuper ? 'flex' : 'none';
+
+            if (!isSuper) {
+                if (contentUsers && !contentUsers.classList.contains('hidden')) {
+                    switchAdminTab('pm');
+                }
+                if (subtabsGrid) {
+                    subtabsGrid.className = "grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6";
+                }
+            } else {
+                if (subtabsGrid) {
+                    subtabsGrid.className = "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6";
+                }
+            }
+
             const { q, lay, klu } = getSmartFilterValues('admin');
             const filtered = filterPMList(allPM, q, lay, klu);
 
@@ -6554,7 +7029,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800">Day Care</span>' :
                         ((p.layanan && p.layanan.toLowerCase().includes('rusun')) ? '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-teal-100 text-teal-800">Rusun</span>' : '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-cyan-100 text-cyan-800">Residensial</span>');
 
-                    h += `<tr><td class="${tdClass} font-bold">${p.nama}</td><td class="${tdClass}">${p.nik || '-'}</td><td class="${tdClass}">${layBadge}</td><td class="${tdClass}">${p.kluster}</td><td class="${tdClass}"><span class="px-2 py-1 bg-gray-100 rounded text-xs font-semibold">${p.status}</span></td><td class="${tdClass}"><button class="text-primary font-bold hover:underline" onclick="showDetail('${p.id}')">Lihat</button></td></tr>`;
+                    h += `<tr><td class="${tdClass} font-bold">${escapeHtml(p.nama)}</td><td class="${tdClass}">${escapeHtml(p.nik || '-')}</td><td class="${tdClass}">${layBadge}</td><td class="${tdClass}">${escapeHtml(p.kluster)}</td><td class="${tdClass}"><span class="px-2 py-1 bg-gray-100 rounded text-xs font-semibold">${escapeHtml(p.status)}</span></td><td class="${tdClass}"><button class="text-primary font-bold hover:underline" onclick="showDetail('${escapeHtml(p.id)}')">Lihat</button></td></tr>`;
                 });
             }
             el('tbl-admin').innerHTML = h + '</tbody>';
@@ -6571,6 +7046,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             renderPimpinanMonitor();
             renderStats();
             renderWismaOccupancyDashboard();
+            renderPimpinanKinerja();
         }
 
         function renderPimpinanTugas() {
@@ -6584,7 +7060,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             if (filtered.length === 0) {
                 h1 += `<tr><td colspan="4" class="p-6 text-center bg-gray-50 text-gray-500 italic">Tidak ada PM menunggu penugasan sesuai filter.</td></tr>`;
             } else {
-                filtered.forEach(p => h1 += `<tr><td class="${tdClass} font-bold">${p.nama}</td><td class="${tdClass}">${p.kluster}</td><td class="${tdClass}"><select id="sel-${p.id}" class="border rounded px-2 py-1 text-sm w-full">${opts}</select></td><td class="${tdClass}"><button class="bg-primary hover:bg-dark text-white px-3 py-1 rounded text-xs font-bold shadow" onclick="setPj('${p.id}')">Tetapkan</button></td></tr>`);
+                filtered.forEach(p => h1 += `<tr><td class="${tdClass} font-bold">${escapeHtml(p.nama)}</td><td class="${tdClass}">${escapeHtml(p.kluster)}</td><td class="${tdClass}"><select id="sel-${escapeHtml(p.id)}" class="border rounded px-2 py-1 text-sm w-full">${opts}</select></td><td class="${tdClass}"><button class="bg-primary hover:bg-dark text-white px-3 py-1 rounded text-xs font-bold shadow" onclick="setPj('${escapeHtml(p.id)}')">Tetapkan</button></td></tr>`);
             }
             el('tbl-tugas').innerHTML = h1 + '</tbody>';
             const cnt = el('sf-count-tugas'); if (cnt) cnt.innerHTML = `Menampilkan <b>${filtered.length}</b> dari <b>${list.length}</b> PM`;
@@ -6600,8 +7076,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 h2 += `<tr><td colspan="4" class="p-6 text-center bg-gray-50 text-gray-500 italic">Tidak ada pengajuan terminasi sesuai filter.</td></tr>`;
             } else {
                 filtered.forEach(p => {
-                    const bastBadge = p.bast_terminasi_url ? `<a href="${p.bast_terminasi_url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-100 hover:text-red-900 transition"><span class="material-icons text-[14px]">description</span> Lihat BAST</a>` : '<span class="text-xs text-gray-400 italic">Tidak dilampirkan</span>';
-                    h2 += `<tr><td class="${tdClass} font-bold">${p.nama}</td><td class="${tdClass}">${p.alasan}</td><td class="${tdClass}">${bastBadge}</td><td class="${tdClass}"><button class="bg-success hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-bold shadow" onclick="accTerm('${p.id}')">ACC Terminasi</button></td></tr>`;
+                    const safeBast = sanitizeSafeUrl(p.bast_terminasi_url);
+                    const bastBadge = safeBast ? `<a href="${safeBast}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-100 hover:text-red-900 transition"><span class="material-icons text-[14px]">description</span> Lihat BAST</a>` : '<span class="text-xs text-gray-400 italic">Tidak dilampirkan</span>';
+                    h2 += `<tr><td class="${tdClass} font-bold">${escapeHtml(p.nama)}</td><td class="${tdClass}">${escapeHtml(p.alasan || '-')}</td><td class="${tdClass}">${bastBadge}</td><td class="${tdClass}"><button class="bg-success hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-bold shadow" onclick="accTerm('${escapeHtml(p.id)}')">ACC Terminasi</button></td></tr>`;
                 });
             }
             el('tbl-acc-term').innerHTML = h2 + '</tbody>';
@@ -6622,7 +7099,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800">Day Care</span>' :
                         ((p.layanan && p.layanan.toLowerCase().includes('rusun')) ? '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-teal-100 text-teal-800">Rusun</span>' : '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-cyan-100 text-cyan-800">Residensial</span>');
 
-                    h3 += `<tr><td class="${tdClass} font-bold">${p.nama}</td><td class="${tdClass}">${layBadge}</td><td class="${tdClass}">${p.kluster}</td><td class="${tdClass}"><span class="font-bold text-slate-800">${p.pj}</span></td><td class="${tdClass}">${p.caregiver || '-'}</td><td class="${tdClass}"><span class="px-2 py-1 bg-gray-100 text-xs rounded font-semibold">${p.status}</span></td><td class="${tdClass}"><div class="flex items-center gap-2"><button class="text-primary font-bold hover:underline text-xs" onclick="showDetail('${p.id}')">Lihat</button><button class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-xs font-bold shadow-xs flex items-center gap-1 transition active:scale-95" onclick="openModalGantiPeksos('${p.id}')" title="Alihkan / Ganti Pekerja Sosial Pengampu PM"><span class="material-icons text-[13px]">swap_horiz</span> Ganti Peksos</button></div></td></tr>`;
+                    h3 += `<tr><td class="${tdClass} font-bold">${escapeHtml(p.nama)}</td><td class="${tdClass}">${layBadge}</td><td class="${tdClass}">${escapeHtml(p.kluster)}</td><td class="${tdClass}"><span class="font-bold text-slate-800">${escapeHtml(p.pj)}</span></td><td class="${tdClass}">${escapeHtml(p.caregiver || '-')}</td><td class="${tdClass}"><span class="px-2 py-1 bg-gray-100 text-xs rounded font-semibold">${escapeHtml(p.status)}</span></td><td class="${tdClass}"><div class="flex items-center gap-2"><button class="text-primary font-bold hover:underline text-xs" onclick="showDetail('${escapeHtml(p.id)}')">Lihat</button><button class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-xs font-bold shadow-xs flex items-center gap-1 transition active:scale-95" onclick="openModalGantiPeksos('${escapeHtml(p.id)}')" title="Alihkan / Ganti Pekerja Sosial Pengampu PM"><span class="material-icons text-[13px]">swap_horiz</span> Ganti Peksos</button></div></td></tr>`;
                 });
             }
             el('tbl-monitor').innerHTML = h3 + '</tbody>';
@@ -7921,6 +8398,23 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         async function saveJurnal() {
             if (!el('jr-so').value) return myAlert("Isi Kondisi PM saat ini!");
+
+            const rawDokUrl = el('jr-dokumen')?.value?.trim() || '';
+            let dokUrl = '';
+            if (rawDokUrl) {
+                dokUrl = sanitizeSafeUrl(rawDokUrl);
+                if (!dokUrl) {
+                    return myAlert("Link dokumentasi tidak valid atau mengandung protokol tidak diizinkan! Harap gunakan link web yang valid (contoh: https://drive.google.com/...)");
+                }
+            }
+
+            const safeKondisi = cleanInputText(el('jr-so').value, 3000);
+            const safeIntervensi = cleanInputText(el('jr-ap').value, 3000);
+            let finalCatatan = cleanInputText(el('jr-cat').value || '', 3000);
+            if (dokUrl) {
+                finalCatatan = finalCatatan ? `${finalCatatan} | Dokumentasi: ${dokUrl}` : `Dokumentasi: ${dokUrl}`;
+            }
+
             showLoad(true);
             try {
                 const pm = allPM.find(p => p.id === currentPMId);
@@ -7928,19 +8422,13 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 const pmPeksos = pm?.pj || '-';
                 const pmCaregiver = pm?.caregiver || '-';
 
-                const dokUrl = el('jr-dokumen')?.value?.trim() || '';
-                let finalCatatan = el('jr-cat').value || '';
-                if (dokUrl) {
-                    finalCatatan = finalCatatan ? `${finalCatatan} | Dokumentasi: ${dokUrl}` : `Dokumentasi: ${dokUrl}`;
-                }
-
                 await apiCall('simpanJurnal', {
                     id: currentPMId,
                     nama: pmNama,
                     role: currentUser.role,
                     petugas: currentUser.name,
-                    kondisi: el('jr-so').value,
-                    intervensi: el('jr-ap').value,
+                    kondisi: safeKondisi,
+                    intervensi: safeIntervensi,
                     catatan: finalCatatan,
                     dokumen_url: dokUrl
                 });
@@ -8647,7 +9135,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         function logout() { location.reload(); }
         function gantiRole() { if (currentUser.raw) renderRoleSelect(currentUser.raw); }
         function switchPimTab(t) {
-            ['tugas', 'caregiver', 'approval', 'monitor', 'stats', 'wisma'].forEach(x => {
+            ['tugas', 'caregiver', 'approval', 'monitor', 'stats', 'wisma', 'kinerja'].forEach(x => {
                 const content = el(`pim-content-${x}`);
                 const tabBtn = el(`pim-tab-${x}`);
                 if (content) content.classList.add('hidden');
@@ -8661,6 +9149,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             if (t === 'caregiver') renderPimpinanCaregiver();
             if (t === 'stats') renderStats();
             if (t === 'wisma') renderWismaOccupancyDashboard();
+            if (t === 'kinerja') renderPimpinanKinerja();
         }
 
         // =========================================================================
@@ -8949,6 +9438,843 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             }
         }
 
+        // =========================================================================
+        // MONITORING KINERJA SELURUH PEGAWAI & DOKUMENTASI FOTO (ROLE PIMPINAN)
+        // =========================================================================
+
+        let allKinerjaLogs = [];
+        let allKinerjaPegawaiList = [];
+        let kinerjaCurrentFiltered = [];
+        let kinerjaCurrentMode = 'rekap'; // 'rekap' | 'riwayat'
+        let kinerjaDetailSelectedLog = null;
+
+        /**
+         * Helper Cerdas Ekstraksi Link Dokumentasi / Foto dari Jurnal
+         */
+        function parseDokumenLink(urlOrCatatan) {
+            if (!urlOrCatatan) return null;
+            let rawUrl = '';
+
+            if (typeof urlOrCatatan === 'string' && urlOrCatatan.match(/^https?:\/\//i)) {
+                rawUrl = urlOrCatatan.trim();
+            } else if (typeof urlOrCatatan === 'string') {
+                const matchDok = urlOrCatatan.match(/Dokumentasi:\s*(https?:\/\/[^\s|]+)/i);
+                if (matchDok) {
+                    rawUrl = matchDok[1].trim();
+                } else {
+                    const matchHttp = urlOrCatatan.match(/(https?:\/\/[^\s\)\|\,\;]+)/i);
+                    if (matchHttp) rawUrl = matchHttp[1].trim();
+                }
+            }
+
+            if (!rawUrl) return null;
+
+            // Bersihkan tanda baca di akhir URL jika ada
+            rawUrl = rawUrl.replace(/[\)\|\,\;\.]+$/, '');
+            rawUrl = sanitizeSafeUrl(rawUrl);
+            if (!rawUrl) return null;
+
+            let type = 'link';
+            let fileId = null;
+            let thumbnailUrl = null;
+
+            // Deteksi Google Drive File
+            const gdMatch = rawUrl.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i) ||
+                            rawUrl.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/i) ||
+                            rawUrl.match(/drive\.google\.com\/uc\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i);
+
+            if (gdMatch) {
+                type = 'gdrive_file';
+                fileId = gdMatch[1];
+                thumbnailUrl = `https://lh3.googleusercontent.com/d/${fileId}=w400`;
+            } else if (rawUrl.includes('drive.google.com/drive/folders/')) {
+                type = 'gdrive_folder';
+            } else if (rawUrl.match(/\.(jpeg|jpg|png|webp|gif)(\?.*)?$/i) || rawUrl.includes('/storage/v1/object/public/')) {
+                type = 'image';
+                thumbnailUrl = rawUrl;
+            } else if (rawUrl.match(/\.pdf(\?.*)?$/i)) {
+                type = 'pdf';
+            }
+
+            return {
+                url: rawUrl,
+                type: type,
+                fileId: fileId,
+                thumbnailUrl: thumbnailUrl,
+                isImageOrDrive: type === 'image' || type === 'gdrive_file'
+            };
+        }
+
+        /**
+         * Helper Label Badge Role Pegawai
+         */
+        function getKinerjaRoleBadgeHtml(role) {
+            const r = String(role || '').toLowerCase();
+            if (r.includes('pekerja sosial')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">Pekerja Sosial</span>';
+            } else if (r.includes('penyuluh sosial')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">Penyuluh Sosial</span>';
+            } else if (r.includes('caregiver')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">Caregiver</span>';
+            } else if (r.includes('instruktur')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-orange-100 text-orange-800 border border-orange-200">Instruktur Vokasi</span>';
+            } else if (r.includes('dokter')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">Dokter</span>';
+            } else if (r.includes('perawat')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-100 text-pink-800 border border-pink-200">Perawat</span>';
+            } else if (r.includes('psikolog')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-violet-100 text-violet-800 border border-violet-200">Psikolog</span>';
+            } else if (r.includes('fisioterapis') || r.includes('terapis')) {
+                return `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-100 text-teal-800 border border-teal-200">${role}</span>`;
+            } else if (r.includes('pimpinan')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-cyan-100 text-cyan-800 border border-cyan-200">Pimpinan</span>';
+            } else if (r.includes('super admin')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">Super Admin</span>';
+            } else if (r.includes('admin')) {
+                return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200">Admin</span>';
+            }
+            return `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">${role || 'Pegawai'}</span>`;
+        }
+
+        /**
+         * Helper Inisial Avatar
+         */
+        function getKinerjaAvatarInitials(name) {
+            if (!name) return 'ST';
+            const clean = name.replace(/^(dr\.|drs\.|dra\.|apt\.|hj\.|h\.)\s*/i, '').trim();
+            const parts = clean.split(/\s+/);
+            if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+            return (parts[0][0] + parts[1][0]).toUpperCase();
+        }
+
+        /**
+         * Fetch Data Monitoring Kinerja dari Supabase
+         */
+        async function dbGetMonitoringKinerjaData(forceRefresh = false) {
+            const client = getSupabase();
+            if (!client) return { logs: [], accounts: [] };
+
+            let accounts = [];
+            try {
+                const { data: accData, error: accErr } = await client
+                    .from('akun')
+                    .select('id, username, nama, roles, klaster')
+                    .order('nama', { ascending: true });
+                if (!accErr && accData) accounts = accData;
+            } catch (e) {
+                console.warn("dbGetMonitoringKinerjaData akun error:", e);
+            }
+
+            let logs = [];
+            try {
+                const { data: logData, error: logErr } = await client
+                    .from('jurnal_layanan')
+                    .select('*')
+                    .order('timestamp', { ascending: false })
+                    .limit(3000);
+                if (!logErr && logData) logs = logData;
+            } catch (e) {
+                console.warn("dbGetMonitoringKinerjaData logs error:", e);
+            }
+
+            return { logs, accounts };
+        }
+
+        /**
+         * Render Utama Tab Kinerja Pegawai
+         */
+        async function renderPimpinanKinerja(forceRefresh = false) {
+            try {
+                if (allKinerjaLogs.length === 0 || forceRefresh) {
+                    const statusTxt = el('kinerja-filter-status-text');
+                    if (statusTxt) statusTxt.innerText = 'Mengambil riwayat jurnal & data pegawai dari database...';
+
+                    const res = await apiCall('getMonitoringKinerjaData', { forceRefresh });
+                    allKinerjaLogs = res.logs || [];
+                    const accList = res.accounts || [];
+
+                    // Bangun list komprehensif seluruh pegawai dari Akun + Petugas di Jurnal
+                    const empMap = new Map();
+
+                    accList.forEach(a => {
+                        const rolesArr = Array.isArray(a.roles) ? a.roles : (a.roles ? String(a.roles).split(',').map(s => s.trim()) : []);
+                        const primaryRole = rolesArr[0] || 'Pegawai';
+                        empMap.set(a.nama.toLowerCase().trim(), {
+                            nama: a.nama,
+                            username: a.username,
+                            roles: rolesArr,
+                            primaryRole: primaryRole,
+                            fromAkun: true
+                        });
+                    });
+
+                    allKinerjaLogs.forEach(l => {
+                        const petName = (l.petugas || '').trim();
+                        if (petName && petName.toLowerCase() !== 'system') {
+                            const key = petName.toLowerCase();
+                            if (!empMap.has(key)) {
+                                empMap.set(key, {
+                                    nama: petName,
+                                    username: '-',
+                                    roles: [l.role || 'Pegawai'],
+                                    primaryRole: l.role || 'Pegawai',
+                                    fromAkun: false
+                                });
+                            }
+                        }
+                    });
+
+                    allKinerjaPegawaiList = Array.from(empMap.values()).sort((a, b) => a.nama.localeCompare(b.nama));
+
+                    // Isi Dropdown Filter Pegawai
+                    const sel = el('filter-kinerja-pegawai');
+                    if (sel) {
+                        let opts = '<option value="ALL">Semua Pegawai & Staf (Seluruhnya)</option>';
+                        allKinerjaPegawaiList.forEach(emp => {
+                            opts += `<option value="${emp.nama}">${emp.nama} (${emp.primaryRole})</option>`;
+                        });
+                        sel.innerHTML = opts;
+                    }
+                }
+
+                applyKinerjaFilter();
+            } catch (err) {
+                console.error("renderPimpinanKinerja error:", err);
+                const statusTxt = el('kinerja-filter-status-text');
+                if (statusTxt) statusTxt.innerText = 'Gagal memuat data kinerja: ' + err.message;
+            }
+        }
+
+        /**
+         * Penanganan Ganti Filter Waktu
+         */
+        function handleKinerjaWaktuChange() {
+            const selWaktu = el('filter-kinerja-waktu')?.value || '7hari';
+            const customDateBox = el('filter-kinerja-custom-date');
+            if (customDateBox) {
+                if (selWaktu === 'custom') {
+                    customDateBox.classList.remove('hidden');
+                    // Set default 7 hari terakhir
+                    const end = new Date();
+                    const start = new Date();
+                    start.setDate(start.getDate() - 7);
+                    if (el('filter-kinerja-end') && !el('filter-kinerja-end').value) el('filter-kinerja-end').valueAsDate = end;
+                    if (el('filter-kinerja-start') && !el('filter-kinerja-start').value) el('filter-kinerja-start').valueAsDate = start;
+                } else {
+                    customDateBox.classList.add('hidden');
+                }
+            }
+            applyKinerjaFilter();
+        }
+
+        /**
+         * Reset Seluruh Filter Kinerja
+         */
+        function resetKinerjaFilter() {
+            if (el('filter-kinerja-pegawai')) el('filter-kinerja-pegawai').value = 'ALL';
+            if (el('filter-kinerja-role')) el('filter-kinerja-role').value = 'ALL';
+            if (el('filter-kinerja-waktu')) el('filter-kinerja-waktu').value = '7hari';
+            if (el('filter-kinerja-foto-only')) el('filter-kinerja-foto-only').checked = false;
+            if (el('filter-kinerja-search')) el('filter-kinerja-search').value = '';
+            const customDateBox = el('filter-kinerja-custom-date');
+            if (customDateBox) customDateBox.classList.add('hidden');
+            const clearBtn = el('btn-clear-kinerja-search');
+            if (clearBtn) clearBtn.classList.add('hidden');
+            applyKinerjaFilter();
+        }
+
+        function clearKinerjaSearch() {
+            if (el('filter-kinerja-search')) el('filter-kinerja-search').value = '';
+            const clearBtn = el('btn-clear-kinerja-search');
+            if (clearBtn) clearBtn.classList.add('hidden');
+            applyKinerjaFilter();
+        }
+
+        /**
+         * Beralih Mode Tampilan: 'rekap' | 'riwayat'
+         */
+        function switchKinerjaViewMode(mode) {
+            kinerjaCurrentMode = mode;
+            const btnRekap = el('btn-kinerja-view-rekap');
+            const btnRiwayat = el('btn-kinerja-view-riwayat');
+            const contRekap = el('kinerja-container-rekap');
+            const contRiwayat = el('kinerja-container-riwayat');
+
+            if (mode === 'rekap') {
+                if (btnRekap) {
+                    btnRekap.className = "px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-white text-emerald-900 shadow-xs cursor-pointer";
+                }
+                if (btnRiwayat) {
+                    btnRiwayat.className = "px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-gray-600 hover:text-gray-900 cursor-pointer";
+                }
+                if (contRekap) contRekap.classList.remove('hidden');
+                if (contRiwayat) contRiwayat.classList.add('hidden');
+            } else {
+                if (btnRekap) {
+                    btnRekap.className = "px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-gray-600 hover:text-gray-900 cursor-pointer";
+                }
+                if (btnRiwayat) {
+                    btnRiwayat.className = "px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-white text-emerald-900 shadow-xs cursor-pointer";
+                }
+                if (contRekap) contRekap.classList.add('hidden');
+                if (contRiwayat) contRiwayat.classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Filter Cepat Khusus Pegawai Tertentu dari Kartu Pegawai
+         */
+        function filterKinerjaPegawaiSpesifik(nama) {
+            if (!nama) return;
+            const sel = el('filter-kinerja-pegawai');
+            if (sel) sel.value = nama;
+            switchKinerjaViewMode('riwayat');
+            applyKinerjaFilter();
+            const riwayatEl = el('kinerja-container-riwayat');
+            if (riwayatEl) riwayatEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        /**
+         * Logika Filter Utama Real-Time
+         */
+        function applyKinerjaFilter() {
+            const selPegawai = el('filter-kinerja-pegawai')?.value || 'ALL';
+            const selRole = el('filter-kinerja-role')?.value || 'ALL';
+            const selWaktu = el('filter-kinerja-waktu')?.value || '7hari';
+            const fotoOnly = el('filter-kinerja-foto-only')?.checked || false;
+            const q = (el('filter-kinerja-search')?.value || '').toLowerCase().trim();
+
+            const clearBtn = el('btn-clear-kinerja-search');
+            if (clearBtn) {
+                if (q) clearBtn.classList.remove('hidden');
+                else clearBtn.classList.add('hidden');
+            }
+
+            // Hitung Rentang Waktu
+            const now = new Date();
+            let startDate = null;
+            let endDate = null;
+
+            if (selWaktu === 'today') {
+                startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            } else if (selWaktu === '7hari') {
+                startDate = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+            } else if (selWaktu === '30hari') {
+                startDate = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+            } else if (selWaktu === 'bulan_ini') {
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+            } else if (selWaktu === 'custom') {
+                const sVal = el('filter-kinerja-start')?.value;
+                const eVal = el('filter-kinerja-end')?.value;
+                if (sVal) startDate = new Date(sVal + 'T00:00:00');
+                if (eVal) endDate = new Date(eVal + 'T23:59:59');
+            }
+
+            // Eksekusi Filtering
+            const filtered = allKinerjaLogs.filter(log => {
+                // 1. Waktu
+                if (log.timestamp) {
+                    const logDate = new Date(log.timestamp);
+                    if (startDate && logDate < startDate) return false;
+                    if (endDate && logDate > endDate) return false;
+                }
+
+                // 2. Pegawai
+                if (selPegawai !== 'ALL') {
+                    if ((log.petugas || '').toLowerCase().trim() !== selPegawai.toLowerCase().trim()) return false;
+                }
+
+                // 3. Role
+                if (selRole !== 'ALL') {
+                    const r = (log.role || '').toLowerCase();
+                    if (selRole === 'Medis') {
+                        if (!['dokter', 'perawat', 'apoteker'].some(x => r.includes(x))) return false;
+                    } else if (selRole === 'Terapis') {
+                        if (!['terapis', 'fisioterapis', 'ortotis'].some(x => r.includes(x))) return false;
+                    } else if (selRole === 'Psikolog') {
+                        if (!r.includes('psikolog')) return false;
+                    } else {
+                        if (!r.includes(selRole.toLowerCase())) return false;
+                    }
+                }
+
+                // 4. Foto Only
+                const doc = parseDokumenLink(log.dokumen_url || log.catatan);
+                if (fotoOnly && !doc) return false;
+
+                // 5. Query Pencarian
+                if (q) {
+                    const hay = `${log.petugas || ''} ${log.role || ''} ${log.nama_pm || ''} ${log.id_pm || ''} ${log.kondisi || ''} ${log.intervensi || ''} ${log.catatan || ''}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                }
+
+                return true;
+            });
+
+            kinerjaCurrentFiltered = filtered;
+
+            // Hitung Metrik KPI
+            const totalLogs = filtered.length;
+            const uniquePetugas = new Set(filtered.map(l => (l.petugas || '').trim().toLowerCase()).filter(Boolean));
+            const totalPetugasAktif = uniquePetugas.size;
+
+            let withFotoCount = 0;
+            let todayCount = 0;
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+
+            filtered.forEach(l => {
+                if (parseDokumenLink(l.dokumen_url || l.catatan)) withFotoCount++;
+                if (l.timestamp && new Date(l.timestamp) >= todayStart) todayCount++;
+            });
+
+            const fotoPct = totalLogs > 0 ? Math.round((withFotoCount / totalLogs) * 100) : 0;
+
+            if (el('kinerja-kpi-total')) el('kinerja-kpi-total').innerText = totalLogs.toLocaleString('id-ID');
+            if (el('kinerja-kpi-pegawai')) {
+                el('kinerja-kpi-pegawai').innerHTML = `${totalPetugasAktif} <span class="text-xs text-gray-400 font-normal">/ ${allKinerjaPegawaiList.length} Staf</span>`;
+            }
+            if (el('kinerja-kpi-foto')) {
+                el('kinerja-kpi-foto').innerHTML = `${withFotoCount.toLocaleString('id-ID')} <span id="kinerja-kpi-foto-pct" class="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 font-bold ml-1">${fotoPct}%</span>`;
+            }
+            if (el('kinerja-kpi-today')) el('kinerja-kpi-today').innerText = todayCount.toLocaleString('id-ID');
+
+            // Update Label Status & Badges
+            const statusTxt = el('kinerja-filter-status-text');
+            if (statusTxt) {
+                statusTxt.innerHTML = `Menampilkan <b>${totalLogs}</b> aktivitas dari <b>${totalPetugasAktif}</b> pegawai berkontribusi (Total ${allKinerjaPegawaiList.length} pegawai SIMRES).`;
+            }
+            const bCnt = el('badge-count-riwayat');
+            if (bCnt) bCnt.innerText = totalLogs;
+            const rCntBadge = el('kinerja-riwayat-count-badge');
+            if (rCntBadge) rCntBadge.innerText = `${totalLogs} Riwayat Aktivitas`;
+
+            // Render Sub-Views
+            renderKinerjaRekapView(filtered);
+            renderKinerjaRiwayatView(filtered);
+        }
+
+        /**
+         * Render Tampilan 1: Rekap per Pegawai (Cards Grid)
+         */
+        function renderKinerjaRekapView(filteredLogs) {
+            const container = el('kinerja-pegawai-cards');
+            if (!container) return;
+
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            const weekStart = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+
+            // Agregasi Aktivitas per Pegawai
+            const statsPerPegawai = allKinerjaPegawaiList.map(emp => {
+                const empKey = emp.nama.toLowerCase().trim();
+                const myLogs = filteredLogs.filter(l => (l.petugas || '').toLowerCase().trim() === empKey);
+                const uniquePMs = new Set(myLogs.map(l => l.id_pm).filter(Boolean)).size;
+                const photoLogs = myLogs.filter(l => parseDokumenLink(l.dokumen_url || l.catatan)).length;
+
+                // Cari log paling akhir dari seluruh log (bukan hanya filtered) untuk cek keaktifan
+                const latestLogAll = allKinerjaLogs.find(l => (l.petugas || '').toLowerCase().trim() === empKey);
+
+                let statusKeaktifan = 'none';
+                if (latestLogAll && latestLogAll.timestamp) {
+                    const t = new Date(latestLogAll.timestamp);
+                    if (t >= todayStart) statusKeaktifan = 'today';
+                    else if (t >= weekStart) statusKeaktifan = 'week';
+                }
+
+                return {
+                    emp,
+                    totalLogs: myLogs.length,
+                    uniquePMs,
+                    photoLogs,
+                    latestLog: myLogs[0] || latestLogAll || null,
+                    statusKeaktifan
+                };
+            });
+
+            // Urutkan: yang paling aktif / paling banyak log di urutan teratas
+            statsPerPegawai.sort((a, b) => {
+                if (b.totalLogs !== a.totalLogs) return b.totalLogs - a.totalLogs;
+                return a.emp.nama.localeCompare(b.emp.nama);
+            });
+
+            if (el('kinerja-rekap-count-badge')) {
+                el('kinerja-rekap-count-badge').innerText = `${statsPerPegawai.length} Pegawai SIMRES`;
+            }
+
+            if (statsPerPegawai.length === 0) {
+                container.innerHTML = '<div class="col-span-3 p-8 text-center bg-white rounded-2xl border border-gray-100 text-gray-400 italic">Tidak ada pegawai yang sesuai filter.</div>';
+                return;
+            }
+
+            let cardsHtml = '';
+            statsPerPegawai.forEach(item => {
+                const { emp, totalLogs, uniquePMs, photoLogs, latestLog, statusKeaktifan } = item;
+                const initials = getKinerjaAvatarInitials(emp.nama);
+                const roleBadge = getKinerjaRoleBadgeHtml(emp.primaryRole);
+
+                let statusBadge = '';
+                if (statusKeaktifan === 'today') {
+                    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping"></span> Aktif Hari Ini</span>';
+                } else if (statusKeaktifan === 'week') {
+                    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200">Aktif Pekan Ini</span>';
+                } else {
+                    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-500">Belum Ada Input</span>';
+                }
+
+                const photoPct = totalLogs > 0 ? Math.round((photoLogs / totalLogs) * 100) : 0;
+                const latestText = latestLog ? (latestLog.kondisi || latestLog.intervensi || 'Aktivitas tercatat') : 'Belum ada catatan aktivitas';
+                const latestTime = latestLog ? formatDateStandard(latestLog.timestamp, true) : '-';
+
+                cardsHtml += `
+                    <div class="bg-white rounded-2xl p-5 border border-gray-100 hover:border-emerald-300 shadow-xs hover:shadow-md transition flex flex-col justify-between group">
+                        <div>
+                            <!-- Header Card Pegawai -->
+                            <div class="flex items-start justify-between gap-2 mb-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-black text-sm flex items-center justify-center shadow-sm shrink-0">
+                                        ${initials}
+                                    </div>
+                                    <div>
+                                        <h4 class="font-extrabold text-sm text-slate-800 leading-snug group-hover:text-emerald-700 transition">${emp.nama}</h4>
+                                        <div class="flex flex-wrap items-center gap-1.5 mt-1">
+                                            ${roleBadge}
+                                            ${emp.username && emp.username !== '-' ? `<span class="text-[10px] font-mono text-gray-400">@${emp.username}</span>` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="shrink-0">
+                                    ${statusBadge}
+                                </div>
+                            </div>
+
+                            <!-- Stat Box 3 Kolom -->
+                            <div class="grid grid-cols-3 gap-2 my-3.5 p-3 bg-slate-50 rounded-xl border border-slate-100 text-center">
+                                <div>
+                                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Jurnal</span>
+                                    <span class="text-base font-black text-slate-800">${totalLogs}</span>
+                                </div>
+                                <div>
+                                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">PM Ampuan</span>
+                                    <span class="text-base font-black text-slate-800">${uniquePMs}</span>
+                                </div>
+                                <div>
+                                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Bukti Foto</span>
+                                    <span class="text-base font-black ${photoLogs > 0 ? 'text-teal-600' : 'text-gray-400'}">${photoLogs}</span>
+                                </div>
+                            </div>
+
+                            <!-- Progress Rasio Foto -->
+                            <div class="mb-3">
+                                <div class="flex justify-between items-center text-[10px] text-gray-500 mb-1">
+                                    <span class="font-semibold">Kelengkapan Dokumentasi Foto:</span>
+                                    <span class="font-bold text-teal-700">${photoPct}% (${photoLogs}/${totalLogs})</span>
+                                </div>
+                                <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                                    <div class="bg-gradient-to-r from-teal-500 to-emerald-500 h-1.5 rounded-full" style="width: ${photoPct}%"></div>
+                                </div>
+                            </div>
+
+                            <!-- Catatan Terakhir -->
+                            <div class="text-[11px] text-gray-500 border-t border-gray-100 pt-2.5">
+                                <span class="font-bold text-slate-700 block">Aktivitas Terakhir:</span>
+                                <p class="truncate italic mt-0.5 text-slate-600" title="${latestText}">${latestText}</p>
+                                <span class="text-[10px] text-gray-400 mt-0.5 block font-mono">${latestTime}</span>
+                            </div>
+                        </div>
+
+                        <!-- Action Button -->
+                        <div class="mt-4 pt-3 border-t border-gray-100 flex justify-end">
+                            <button onclick="filterKinerjaPegawaiSpesifik('${emp.nama}')"
+                                class="w-full py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer">
+                                <span class="material-icons text-sm">manage_search</span>
+                                <span>Lihat Riwayat & Foto Pegawai Ini</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = cardsHtml;
+        }
+
+        /**
+         * Render Tampilan 2: Riwayat Aktivitas & Feed Foto (Tabel Lengkap)
+         */
+        function renderKinerjaRiwayatView(filteredLogs) {
+            const tableEl = el('tbl-kinerja-riwayat');
+            if (!tableEl) return;
+
+            let h = `
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th class="${thClass}">No</th>
+                        <th class="${thClass}">Waktu Aktivitas</th>
+                        <th class="${thClass}">Petugas & Jabatan</th>
+                        <th class="${thClass}">Penerima Manfaat (PM)</th>
+                        <th class="${thClass} min-w-[280px]">Pelayanan / Tindakan</th>
+                        <th class="${thClass} min-w-[200px]">Catatan / SOAP</th>
+                        <th class="${thClass} min-w-[180px]">Bukti Foto & Dokumen</th>
+                        <th class="${thClass} text-center">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+            `;
+
+            if (filteredLogs.length === 0) {
+                h += `<tr><td colspan="8" class="p-8 text-center bg-gray-50 text-gray-500 italic">Tidak ada catatan aktivitas yang sesuai dengan filter.</td></tr>`;
+            } else {
+                filteredLogs.forEach((log, idx) => {
+                    const waktuStr = formatDateStandard(log.timestamp, true);
+                    const roleBadge = getKinerjaRoleBadgeHtml(log.role);
+                    const docInfo = parseDokumenLink(log.dokumen_url || log.catatan);
+
+                    // Desain Kolom Foto & Dokumentasi
+                    let dokHtml = '';
+                    if (docInfo && docInfo.url) {
+                        let thumbImg = '';
+                        if (docInfo.thumbnailUrl) {
+                            thumbImg = `
+                                <div class="relative group cursor-pointer shrink-0" onclick="bukaModalDetailKinerja('${log.id_log}')" title="Klik untuk memperbesar foto">
+                                    <img src="${docInfo.thumbnailUrl}" alt="Dokumentasi" class="w-12 h-12 rounded-lg object-cover border border-emerald-300 shadow-2xs group-hover:scale-105 transition" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\'w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200\'><span class=\'material-icons text-xl\'>image</span></div>';">
+                                    <div class="absolute inset-0 bg-black/25 rounded-lg opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                                        <span class="material-icons text-white text-xs">zoom_in</span>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        dokHtml = `
+                            <div class="flex items-center gap-2">
+                                ${thumbImg}
+                                <div class="space-y-1">
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                        <span class="material-icons text-[12px]">photo_camera</span> Ada Foto/Bukti
+                                    </span>
+                                    <div class="flex items-center gap-1">
+                                        <button onclick="bukaModalDetailKinerja('${log.id_log}')" class="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold border border-emerald-200 transition cursor-pointer">
+                                            Lihat Foto
+                                        </button>
+                                        <a href="${docInfo.url}" target="_blank" rel="noopener noreferrer" class="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[10px] font-bold border border-blue-200 transition cursor-pointer" title="Buka tautan file asli">
+                                            Buka Asli
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        dokHtml = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-400">Tanpa Lampiran</span>`;
+                    }
+
+                    // Tautan Klik ke PM jika PM terdaftar
+                    let pmDisplay = `<span class="font-bold text-slate-800">${escapeHtml(log.nama_pm || '-')}</span>`;
+                    if (log.id_pm) {
+                        pmDisplay = `
+                            <div>
+                                <button onclick="showDetail('${escapeHtml(log.id_pm)}')" class="font-bold text-primary hover:underline text-left cursor-pointer" title="Buka Profil PM">
+                                    ${escapeHtml(log.nama_pm || '-')}
+                                </button>
+                                <span class="block text-[10px] font-mono text-gray-400">${escapeHtml(log.id_pm)}</span>
+                            </div>
+                        `;
+                    }
+
+                    h += `
+                        <tr class="hover:bg-slate-50/80 transition">
+                            <td class="${tdClass} text-gray-400 text-xs text-center font-mono">${idx + 1}</td>
+                            <td class="${tdClass} font-mono text-xs whitespace-nowrap text-slate-700">
+                                <span class="font-bold block text-slate-900">${waktuStr.split(',')[0]}</span>
+                                <span class="text-[10px] text-gray-400">${waktuStr.split(',')[1] || ''}</span>
+                            </td>
+                            <td class="${tdClass}">
+                                <span class="font-bold text-slate-900 block">${escapeHtml(log.petugas || '-')}</span>
+                                <div class="mt-1">${roleBadge}</div>
+                            </td>
+                            <td class="${tdClass}">${pmDisplay}</td>
+                            <td class="${tdClass} text-xs leading-relaxed">
+                                <div class="font-bold text-slate-800">${escapeHtml(log.kondisi || '-')}</div>
+                                <div class="text-emerald-800 mt-1">${escapeHtml(log.intervensi || '-')}</div>
+                            </td>
+                            <td class="${tdClass} text-xs text-gray-600 italic leading-relaxed">
+                                ${escapeHtml(log.catatan || '-')}
+                            </td>
+                            <td class="${tdClass}">
+                                ${dokHtml}
+                            </td>
+                            <td class="${tdClass} text-center">
+                                <button onclick="bukaModalDetailKinerja('${log.id_log}')"
+                                    class="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition shadow-2xs active:scale-95 cursor-pointer">
+                                    Detail
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            tableEl.innerHTML = h + '</tbody>';
+        }
+
+        /**
+         * Buka Modal Detail Aktivitas & Pratinjau Foto
+         */
+        function bukaModalDetailKinerja(idLog) {
+            const log = allKinerjaLogs.find(l => l.id_log === idLog);
+            if (!log) return;
+            kinerjaDetailSelectedLog = log;
+
+            if (el('mkd-petugas')) el('mkd-petugas').innerText = log.petugas || '-';
+            if (el('mkd-role-badge')) el('mkd-role-badge').outerHTML = `<div id="mkd-role-badge">${getKinerjaRoleBadgeHtml(log.role)}</div>`;
+            if (el('mkd-waktu')) el('mkd-waktu').innerText = formatDateStandard(log.timestamp, true);
+
+            if (el('mkd-nama-pm')) el('mkd-nama-pm').innerText = log.nama_pm || '-';
+            if (el('mkd-id-pm')) el('mkd-id-pm').innerText = log.id_pm || '-';
+
+            // Cari detail PM dari allPM
+            const pm = (typeof allPM !== 'undefined' && Array.isArray(allPM)) ? allPM.find(p => p.id === log.id_pm) : null;
+            if (el('mkd-klaster')) el('mkd-klaster').innerText = (pm ? (pm.kluster || pm.layanan) : 'Residensial SIMRES');
+
+            if (el('mkd-kondisi')) el('mkd-kondisi').innerText = log.kondisi || '-';
+            if (el('mkd-intervensi')) el('mkd-intervensi').innerText = log.intervensi || '-';
+            if (el('mkd-catatan')) el('mkd-catatan').innerText = log.catatan || '-';
+
+            // Area Foto & Dokumentasi
+            const docInfo = parseDokumenLink(log.dokumen_url || log.catatan);
+            const previewArea = el('mkd-preview-area');
+            const statusFoto = el('mkd-status-foto');
+            const actionLinks = el('mkd-action-links');
+            const rawUrl = el('mkd-raw-url');
+            const extBtn = el('mkd-external-btn');
+
+            if (docInfo && docInfo.url) {
+                if (statusFoto) {
+                    statusFoto.className = "text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200";
+                    statusFoto.innerText = "Lampiran Tersedia";
+                }
+                if (actionLinks) actionLinks.classList.remove('hidden');
+                if (rawUrl) rawUrl.innerText = docInfo.url;
+                if (extBtn) extBtn.href = docInfo.url;
+
+                if (previewArea) {
+                    if (docInfo.isImageOrDrive) {
+                        const imgSrc = docInfo.thumbnailUrl || docInfo.url;
+                        previewArea.innerHTML = `
+                            <div class="relative max-h-[380px] flex items-center justify-center overflow-hidden rounded-2xl border border-emerald-200 bg-black/5 p-2 group">
+                                <img src="${imgSrc}" alt="Dokumentasi Jurnal" class="max-h-[360px] w-auto max-w-full rounded-xl object-contain shadow-md" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'p-8 text-center text-slate-500\\'><span class=\\'material-icons text-5xl text-emerald-500 mb-2\\'>description</span><p class=\\'text-xs font-bold\\'>Pratinjau otomatis terbatas oleh izin tautan eksternal.</p><p class=\\'text-[11px] text-slate-400 mt-1\\'>Silakan klik tombol Buka Tautan Dokumen / Foto di bawah untuk melihat file di tab baru.</p></div>';">
+                            </div>
+                        `;
+                    } else if (docInfo.type === 'gdrive_folder') {
+                        previewArea.innerHTML = `
+                            <div class="p-8 rounded-2xl border border-blue-200 bg-blue-50/50 text-center">
+                                <span class="material-icons text-5xl text-blue-600 mb-2">folder_shared</span>
+                                <h5 class="text-sm font-bold text-blue-950">Folder Dokumentasi Google Drive</h5>
+                                <p class="text-xs text-blue-800 mt-1">Kegiatan ini melampirkan folder foto/berkas di Google Drive.</p>
+                            </div>
+                        `;
+                    } else if (docInfo.type === 'pdf') {
+                        previewArea.innerHTML = `
+                            <div class="p-8 rounded-2xl border border-rose-200 bg-rose-50/50 text-center">
+                                <span class="material-icons text-5xl text-rose-600 mb-2">picture_as_pdf</span>
+                                <h5 class="text-sm font-bold text-rose-950">Dokumen Lampiran PDF</h5>
+                                <p class="text-xs text-rose-800 mt-1">Berkas dokumentasi dalam format dokumen PDF.</p>
+                            </div>
+                        `;
+                    } else {
+                        previewArea.innerHTML = `
+                            <div class="p-8 rounded-2xl border border-slate-200 bg-slate-50 text-center">
+                                <span class="material-icons text-5xl text-slate-600 mb-2">attachment</span>
+                                <h5 class="text-sm font-bold text-slate-950">Tautan Berkas Dokumentasi</h5>
+                                <p class="text-xs text-slate-600 mt-1">Klik tombol di bawah untuk membuka tautan lampiran.</p>
+                            </div>
+                        `;
+                    }
+                }
+            } else {
+                if (statusFoto) {
+                    statusFoto.className = "text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200";
+                    statusFoto.innerText = "Tanpa Lampiran Foto";
+                }
+                if (actionLinks) actionLinks.classList.add('hidden');
+                if (previewArea) {
+                    previewArea.innerHTML = '<p class="text-xs text-gray-400 italic py-6">Aktivitas pelayanan ini tidak melampirkan foto / berkas dokumentasi.</p>';
+                }
+            }
+
+            const modal = el('modal-kinerja-detail');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function tutupModalDetailKinerja() {
+            const modal = el('modal-kinerja-detail');
+            if (modal) modal.classList.add('hidden');
+            kinerjaDetailSelectedLog = null;
+        }
+
+        async function salinLinkDokumenKinerja() {
+            if (!kinerjaDetailSelectedLog) return;
+            const docInfo = parseDokumenLink(kinerjaDetailSelectedLog.dokumen_url || kinerjaDetailSelectedLog.catatan);
+            if (docInfo && docInfo.url) {
+                try {
+                    await navigator.clipboard.writeText(docInfo.url);
+                    await myAlert("Tautan dokumen/foto berhasil disalin ke clipboard:\n" + docInfo.url);
+                } catch (e) {
+                    prompt("Salin link dokumentasi ini:", docInfo.url);
+                }
+            }
+        }
+
+        /**
+         * Refresh Data Kinerja Pegawai
+         */
+        async function refreshKinerjaData() {
+            showLoad(true);
+            try {
+                await renderPimpinanKinerja(true);
+                await myAlert("Data aktivitas pegawai berhasil diperbarui dari server!");
+            } catch (e) {
+                myAlert("Gagal refresh data kinerja: " + e.message);
+            } finally {
+                showLoad(false);
+            }
+        }
+
+        /**
+         * Ekspor Laporan Kinerja ke Excel (.xlsx / .csv)
+         */
+        function exportKinerjaToExcel() {
+            if (kinerjaCurrentFiltered.length === 0) {
+                return myAlert("Tidak ada data aktivitas yang sesuai untuk diekspor!");
+            }
+
+            const exportRows = kinerjaCurrentFiltered.map((l, idx) => {
+                const doc = parseDokumenLink(l.dokumen_url || l.catatan);
+                return {
+                    'No': idx + 1,
+                    'Waktu Aktivitas': formatDateStandard(l.timestamp, true),
+                    'Nama Petugas': l.petugas || '-',
+                    'Role / Jabatan': l.role || '-',
+                    'ID PM': l.id_pm || '-',
+                    'Nama PM': l.nama_pm || '-',
+                    'Kondisi PM / Topik': (l.kondisi || '').replace(/\r?\n/g, ' '),
+                    'Intervensi / Pelayanan': (l.intervensi || '').replace(/\r?\n/g, ' '),
+                    'Catatan Tambahan': (l.catatan || '').replace(/\r?\n/g, ' '),
+                    'Status Foto': doc ? 'Ada Lampiran Foto' : 'Tanpa Lampiran',
+                    'Tautan Foto / Dokumentasi': doc ? doc.url : '-'
+                };
+            });
+
+            if (typeof XLSX !== 'undefined') {
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.json_to_sheet(exportRows);
+                XLSX.utils.book_append_sheet(wb, ws, "Kinerja Pegawai SIMRES");
+                XLSX.writeFile(wb, `Laporan_Kinerja_Pegawai_SIMRES_${Date.now()}.xlsx`);
+            } else {
+                exportTableToCSV('tbl-kinerja-riwayat', `Laporan_Kinerja_Pegawai_SIMRES_${Date.now()}.csv`);
+            }
+        }
+
+        /**
+         * Upload Foto Langsung di Modal Form Jurnal Pelayanan
+         */
+
         // --- WISMA MANAGEMENT & OCCUPANCY DASHBOARD LOGIC ---
         function getJenisWismaCategory(w) {
             if (!w) return 'Pondok';
@@ -9085,6 +10411,12 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         }
 
         function switchAdminTab(t) {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (t === 'users' && !isSuper) {
+                myAlert("Akses Ditolak: Manajemen User hanya dapat diakses oleh Super Admin.");
+                t = 'pm';
+            }
+
             ['pm', 'wisma', 'keterisian', 'vokasional', 'users'].forEach(x => {
                 const c = el(`adm-content-${x}`);
                 const b = el(`adm-tab-${x}`);
@@ -9099,7 +10431,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             if (t === 'wisma') renderAdminWismaTable();
             else if (t === 'keterisian') renderWismaOccupancyDashboard();
             else if (t === 'vokasional') renderAdminVokasionalTable();
-            else if (t === 'users') renderAdminUsersTable();
+            else if (t === 'users') {
+                if (isSuper) renderAdminUsersTable();
+            }
         }
 
         // --- MANAJEMEN MASTER VOKASIONAL (ADMIN) ---
@@ -9264,6 +10598,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         function getRoleBadgeStyle(role) {
             const r = (role || '').toLowerCase().trim();
+            if (r === 'super admin') return 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold';
             if (r === 'admin') return 'bg-purple-100 text-purple-800 border-purple-200';
             if (r === 'pimpinan') return 'bg-cyan-100 text-cyan-800 border-cyan-200';
             if (r.includes('pekerja sosial')) return 'bg-blue-100 text-blue-800 border-blue-200';
@@ -9282,6 +10617,9 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         }
 
         async function renderAdminUsersTable() {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) return;
+
             showLoad(true);
             try {
                 cachedAdminUsers = await apiCall('getAllUsers');
@@ -9327,7 +10665,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         const roles = Array.isArray(u.roles) ? u.roles : (u.roles ? String(u.roles).split(',').map(r => r.trim()) : []);
                         const badgesHtml = roles.map(r => {
                             const style = getRoleBadgeStyle(r);
-                            return `<span class="px-2 py-0.5 rounded-md text-[11px] font-bold border ${style}">${r}</span>`;
+                            return `<span class="px-2 py-0.5 rounded-md text-[11px] font-bold border ${style}">${escapeHtml(r)}</span>`;
                         }).join(' ');
 
                         const initial = (u.nama || u.username || 'U').trim().charAt(0).toUpperCase();
@@ -9341,17 +10679,17 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                                 <td class="${tdClass}">
                                     <div class="flex items-center gap-3">
                                         <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0 border border-blue-200 shadow-xs">
-                                            ${initial}
+                                            ${escapeHtml(initial)}
                                         </div>
                                         <div>
-                                            <div class="font-bold text-gray-900 text-sm">${u.nama || '-'}</div>
-                                            <div class="text-[11px] text-gray-400">ID: ${u.id || '-'}</div>
+                                            <div class="font-bold text-gray-900 text-sm">${escapeHtml(u.nama || '-')}</div>
+                                            <div class="text-[11px] text-gray-400">ID: ${escapeHtml(u.id || '-')}</div>
                                         </div>
                                     </div>
                                 </td>
                                 <td class="${tdClass}">
                                     <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                                        @${u.username}
+                                        @${escapeHtml(u.username)}
                                     </span>
                                 </td>
                                 <td class="${tdClass}">
@@ -9453,6 +10791,11 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         }
 
         function openModalKelolaUser(userId = null) {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                return myAlert("Akses Ditolak: Manajemen Akun Pengguna hanya dapat diakses oleh Super Admin.");
+            }
+
             // Reset check-boxes
             const checkboxes = document.querySelectorAll('input[name="user-role-opt"]');
             checkboxes.forEach(cb => cb.checked = false);
@@ -9498,17 +10841,25 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         }
 
         async function submitUserForm() {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                return myAlert("Akses Ditolak: Manajemen Akun Pengguna hanya dapat diakses oleh Super Admin.");
+            }
+
             const id = el('user-input-id').value;
-            const nama = el('user-input-nama').value.trim();
-            const username = el('user-input-username').value.trim().toLowerCase();
+            const rawNama = el('user-input-nama').value.trim();
+            const rawUsername = el('user-input-username').value.trim().toLowerCase();
             const password = el('user-input-password').value.trim();
+
+            const nama = cleanInputText(rawNama, 150);
+            const username = cleanInputText(rawUsername, 50).replace(/[^a-z0-9._-]/g, '');
 
             const selectedRoles = [];
             const checkboxes = document.querySelectorAll('input[name="user-role-opt"]:checked');
-            checkboxes.forEach(cb => selectedRoles.push(cb.value));
+            checkboxes.forEach(cb => selectedRoles.push(cleanInputText(cb.value, 50)));
 
             if (!nama) return myAlert("Nama Petugas wajib diisi!");
-            if (!username) return myAlert("Username login wajib diisi!");
+            if (!username || username.length < 3) return myAlert("Username login harus alfanumerik minimal 3 karakter!");
             if (!password) return myAlert("Password login wajib diisi!");
             if (selectedRoles.length === 0) return myAlert("Pilih minimal 1 Role / Hak Akses Petugas!");
 
@@ -9533,6 +10884,11 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         }
 
         async function confirmDeleteUser(id, nama, username) {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                return myAlert("Akses Ditolak: Manajemen Akun Pengguna hanya dapat diakses oleh Super Admin.");
+            }
+
             const ok = await myConfirm(`Apakah Anda yakin ingin menghapus akun '${nama}' (@${username}) dari database?\n\nPerhatian: Akun ini tidak akan bisa login lagi ke SIMRES.`);
             if (!ok) return;
 
@@ -10403,6 +11759,10 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         // --- PANDUAN WALKTHROUGH SQL ---
         function openModalPanduanSQL() {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                return myAlert("Akses Ditolak: Walkthrough SQL hanya dapat diakses oleh Super Admin.");
+            }
             el('modal-panduan-sql').classList.remove('hidden');
         }
 
@@ -11134,6 +12494,10 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
         // --- LOGIKA MODAL PENGATURAN SUPABASE ---
         function openSupabaseSettingsModal() {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                return myAlert("Akses Ditolak: Pengaturan Supabase hanya dapat diakses oleh Super Admin.");
+            }
             el('cfg-supa-url').value = localStorage.getItem('SIMRES_SUPABASE_URL') || (typeof HARDCODED_URL !== 'undefined' ? HARDCODED_URL : '');
             el('cfg-supa-key').value = localStorage.getItem('SIMRES_SUPABASE_ANON') || (typeof HARDCODED_ANON !== 'undefined' ? HARDCODED_ANON : '');
             updateSupabaseStatusBadge();
@@ -11145,6 +12509,11 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         }
 
         function saveSupabaseSettings() {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                return myAlert("Akses Ditolak: Pengaturan Supabase hanya dapat diakses oleh Super Admin.");
+            }
+
             const url = el('cfg-supa-url').value.trim();
             const key = el('cfg-supa-key').value.trim();
 
@@ -11180,8 +12549,12 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
         let currentExcelDataRows = [];
 
         function showImportExcel() {
+            const isSuper = (currentUser && currentUser.role ? currentUser.role : '').toLowerCase().trim() === 'super admin';
+            if (!isSuper) {
+                return myAlert("Akses Ditolak: Fitur Impor & Ekspor Excel hanya dapat diakses oleh Super Admin.");
+            }
             if (typeof isSupabaseConfigured === 'function' && !isSupabaseConfigured()) {
-                myAlert("Untuk menggunakan fitur Impor & Ekspor Excel, harap hubungkan aplikasi ke Database Supabase terlebih dahulu melalui ikon Storage di header.");
+                myAlert("Untuk menggunakan fitur Impor & Ekspor Excel, harap hubungkan aplikasi ke Database Supabase terlebih dahulu.");
                 openSupabaseSettingsModal();
                 return;
             }
