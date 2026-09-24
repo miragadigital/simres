@@ -309,7 +309,7 @@
 
             const { data: dA, error: errA } = await client
                 .from('asesmen_detil')
-                .select('id, kluster, tgl_kontrak_mulai, tgl_kontrak_habis, surat_kontrak_url');
+                .select('id, kluster, layanan, tgl_kontrak_mulai, tgl_kontrak_habis, surat_kontrak_url');
 
             const asesmenMap = {};
             if (dA) {
@@ -335,7 +335,7 @@
                     pernyataanUrl: row.pernyataan_url || '',
                     alasan: row.alasan_terminasi || '',
                     bast_terminasi_url: row.bast_terminasi_url || '',
-                    layanan: row.layanan || 'Residensial',
+                    layanan: row.layanan || as.layanan || 'Residensial',
                     lokasi: row.lokasi_penempatan || 'Belum Ditentukan',
                     kluster: as.kluster || '-',
                     vokasional: row.vokasional || '',
@@ -726,12 +726,55 @@
             const client = getSupabase();
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
+            const nowStr = new Date().toISOString();
+            const pm = (typeof allPM !== 'undefined' && Array.isArray(allPM)) ? allPM.find(p => p.id === id) : null;
+            const updatePayload = { pj: pj, updated_at: nowStr };
+            if (!pm || pm.status === 'Menunggu PJ' || pm.status === '-') {
+                updatePayload.status = 'Proses Asesmen';
+            }
+
             const { error } = await client
                 .from('master_pm')
-                .update({ pj: pj, status: 'Proses Asesmen', updated_at: new Date().toISOString() })
+                .update(updatePayload)
                 .eq('id', id);
 
             if (error) throw error;
+
+            if (pm) {
+                pm.pj = pj;
+                if (updatePayload.status) pm.status = updatePayload.status;
+            }
+            return "OK";
+        }
+
+        /**
+         * Update Jenis Layanan PM (Residensial, Day Care, Rusun)
+         */
+        async function dbUpdateLayanan(id, layanan) {
+            const client = getSupabase();
+            if (!client) throw new Error("Supabase belum dikonfigurasi.");
+
+            const nowStr = new Date().toISOString();
+            const { error: errM } = await client
+                .from('master_pm')
+                .update({ layanan: layanan, updated_at: nowStr })
+                .eq('id', id);
+
+            if (errM) throw errM;
+
+            // Sinkronkan ke asesmen_detil jika record sudah ada
+            try {
+                await client
+                    .from('asesmen_detil')
+                    .update({ layanan: layanan, updated_at: nowStr })
+                    .eq('id', id);
+            } catch (e) {
+                console.warn("Sinkronisasi asesmen_detil update layanan dilewati:", e);
+            }
+
+            const pm = (typeof allPM !== 'undefined' && Array.isArray(allPM)) ? allPM.find(p => p.id === id) : null;
+            if (pm) pm.layanan = layanan;
+
             return "OK";
         }
 
@@ -742,12 +785,15 @@
             const client = getSupabase();
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
-            // Update Master PM Status -> Aktif & Lokasi Penempatan
+            // Update Master PM Status -> Aktif, Lokasi Penempatan & Layanan
             const masterUpdate = {
                 status: 'Aktif',
                 lokasi_penempatan: d.lokasi_penempatan || 'Belum Ditentukan',
                 updated_at: new Date().toISOString()
             };
+            if (d.layanan) {
+                masterUpdate.layanan = d.layanan;
+            }
             if (d.kluster && typeof getCaregiversForKlaster === 'function') {
                 const cgs = getCaregiversForKlaster(d.kluster);
                 if (cgs && cgs.length > 0) {
@@ -1650,27 +1696,45 @@
             const client = getSupabase();
             if (!client) throw new Error("Supabase belum dikonfigurasi.");
 
+            const peksosBaru = d.newPeksos || d.peksosBaru || d.pj;
+            if (!peksosBaru) throw new Error("Pekerja Sosial baru tidak valid atau belum dipilih.");
+            const peksosLama = d.oldPeksos || d.peksosLama || '-';
+
             const nowStr = new Date().toISOString();
+            const pm = (typeof allPM !== 'undefined' && Array.isArray(allPM)) ? allPM.find(p => p.id === d.id) : null;
+            const updatePayload = { pj: peksosBaru, updated_at: nowStr };
+
+            // Jika status masih Menunggu PJ, alihkan status ke Proses Asesmen
+            if (pm && (pm.status === 'Menunggu PJ' || pm.status === '-')) {
+                updatePayload.status = 'Proses Asesmen';
+            }
+
             const { error } = await client
                 .from('master_pm')
-                .update({ pj: d.newPeksos, updated_at: nowStr })
+                .update(updatePayload)
                 .eq('id', d.id);
 
             if (error) throw error;
 
-            const pm = allPM.find(p => p.id === d.id);
-            if (pm) pm.pj = d.newPeksos;
+            if (pm) {
+                pm.pj = peksosBaru;
+                if (updatePayload.status) pm.status = updatePayload.status;
+            }
 
             // Catat riwayat serah terima kasus di Jurnal Layanan
-            await dbSimpanJurnal({
-                id: d.id,
-                nama: pm?.nama || d.nama || 'PM',
-                role: 'Pimpinan',
-                petugas: currentUser.name || 'Pimpinan',
-                kondisi: 'Pengalihan Pekerja Sosial Pengampu Kasus',
-                intervensi: `Pekerja Sosial Baru: ${d.newPeksos} (Sebelumnya: ${d.oldPeksos || '-'})`,
-                catatan: `Alasan Pengalihan: ${d.alasan || 'Penyesuaian penugasan pimpinan'}. Seluruh riwayat asesmen, re-asesmen, dan jurnal harian terdahulu tetap terjaga utuh 100%.`
-            });
+            try {
+                await dbSimpanJurnal({
+                    id: d.id,
+                    nama: pm?.nama || d.nama || 'PM',
+                    role: 'Pimpinan',
+                    petugas: currentUser.name || d.pimpinan || 'Pimpinan',
+                    kondisi: 'Pengalihan Pekerja Sosial Pengampu Kasus',
+                    intervensi: `Pekerja Sosial Baru: ${peksosBaru} (Sebelumnya: ${peksosLama})`,
+                    catatan: `Alasan Pengalihan: ${d.alasan || 'Penyesuaian penugasan pimpinan'}. Seluruh riwayat asesmen, re-asesmen, dan jurnal harian terdahulu tetap terjaga utuh 100%.`
+                });
+            } catch (jErr) {
+                console.warn("Pencatatan jurnal serah terima peksos dilewati:", jErr);
+            }
 
             return "OK";
         }
@@ -6609,6 +6673,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         case 'getPeksos': return await dbGetPeksosAccounts();
                         case 'getCaregiver': return await dbGetCaregiverAccounts();
                         case 'updateCaregiver': return await dbUpdateCaregiver(data.id, data.caregiver);
+                        case 'updateLayanan': return await dbUpdateLayanan(data.id, data.layanan);
                         case 'getPenugasanCaregiver': return await dbGetPenugasanCaregiver();
                         case 'simpanPenugasanCaregiver': return await dbSimpanPenugasanCaregiver(data);
                         case 'hapusPenugasanCaregiver': return await dbHapusPenugasanCaregiver(data.nama_caregiver || data.caregiverNama);
@@ -8072,8 +8137,13 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 const pm = allPM.find(p => p.id === id);
                 if (pm) pm.layanan = val;
                 await myAlert("Jenis Layanan berhasil diupdate menjadi " + val);
-            } catch (e) { console.error(e); }
-            finally { showLoad(false); }
+            } catch (e) {
+                console.error("updateLayanan error:", e);
+                myAlert("Gagal memperbarui jenis layanan: " + e.message);
+                if (typeof renderPekerjaSosial === 'function') renderPekerjaSosial();
+            } finally {
+                showLoad(false);
+            }
         }
 
         async function editLokasiPenempatan(id, currentVal) {
@@ -8116,7 +8186,34 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 triggerNikCheck(element.id, historyBannerId, historyTextId, mode);
             }
         }
-        async function setPj(id) { showLoad(true); await apiCall('updatePJ', { id, pj: el(`sel-${id}`).value }); refreshData(); }
+        async function setPj(id) {
+            const sel = el(`sel-${id}`);
+            const pjVal = sel ? sel.value : '';
+            if (!pjVal) {
+                return myAlert("Pilih Pekerja Sosial terlebih dahulu!");
+            }
+            const pm = (typeof allPM !== 'undefined' && Array.isArray(allPM)) ? allPM.find(p => p.id === id) : null;
+            const pmNama = pm ? pm.nama : id;
+
+            const ok = await myConfirm(`Tetapkan "${pjVal}" sebagai Pekerja Sosial (PJ) untuk PM "${pmNama}"?`);
+            if (!ok) return;
+
+            showLoad(true);
+            try {
+                await apiCall('updatePJ', { id, pj: pjVal });
+                if (pm) {
+                    pm.pj = pjVal;
+                    pm.status = 'Proses Asesmen';
+                }
+                await myAlert(`Pekerja Sosial berhasil ditetapkan: ${pjVal}!`);
+                await refreshData();
+            } catch (e) {
+                console.error("setPj error:", e);
+                myAlert("Gagal menetapkan Pekerja Sosial: " + e.message);
+            } finally {
+                showLoad(false);
+            }
+        }
         async function accTerm(id) { if (await myConfirm("Apakah Anda yakin ingin menyetujui (ACC) terminasi PM ini?\n\nSemua data asesmen detil akan dipindahkan ke Arsip Alumni secara utuh.")) { showLoad(true); await apiCall('accTerminasi', { id }); refreshData(); } }
         let termId = '';
         function openModalTerm(id) {
@@ -11624,7 +11721,7 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
             if (!peksosBaru) return myAlert("Pilih Pekerja Sosial pengganti!");
 
             const pm = allPM.find(p => p.id === id);
-            const peksosLama = pm ? pm.pj : '-';
+            const peksosLama = pm ? (pm.pj || '-') : '-';
 
             const ok = await myConfirm(`Konfirmasi alihkan PM "${pm ? pm.nama : id}" dari ${peksosLama} ke ${peksosBaru}?\n\nSemua riwayat asesmen dan data PM sebelumnya tetap UTUH (Zero Data Loss).`);
             if (!ok) return;
@@ -11634,15 +11731,21 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                 await apiCall('alihkanPeksos', {
                     id,
                     peksosBaru,
+                    newPeksos: peksosBaru,
+                    peksosLama,
+                    oldPeksos: peksosLama,
                     alasan,
                     pimpinan: currentUser.name
                 });
 
-                if (pm) pm.pj = peksosBaru;
+                if (pm) {
+                    pm.pj = peksosBaru;
+                    if (pm.status === 'Menunggu PJ') pm.status = 'Proses Asesmen';
+                }
 
                 closeModalGantiPeksos();
                 await myAlert(`PM berhasil dialihkan ke Pekerja Sosial: ${peksosBaru}!\nData asesmen & riwayat sebelumnya tetap aman tersimpan.`);
-                renderPimpinanMonitor();
+                await refreshData();
             } catch (e) {
                 console.error("submitGantiPeksos error:", e);
                 myAlert("Gagal mengalihkan peksos: " + e.message);
