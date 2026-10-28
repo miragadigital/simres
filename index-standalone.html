@@ -1631,33 +1631,48 @@
             const updatePayload = {
                 tgl_kontrak_mulai: d.tgl_kontrak_mulai || null,
                 tgl_kontrak_habis: d.tgl_kontrak_habis || null,
-                surat_kontrak_url: d.surat_kontrak_url || '',
                 updated_at: nowStr
             };
+            if (d.surat_kontrak_url !== undefined && d.surat_kontrak_url !== null) {
+                updatePayload.surat_kontrak_url = d.surat_kontrak_url;
+            }
 
             const { error: errM } = await client.from('master_pm').update(updatePayload).eq('id', d.id);
             if (errM) throw errM;
 
-            await client.from('asesmen_detil').update(updatePayload).eq('id', d.id);
+            try {
+                await client.from('asesmen_detil').update(updatePayload).eq('id', d.id);
+            } catch (errA) {
+                console.warn("asesmen_detil update warning:", errA);
+            }
 
             // Update in-memory allPM
             const pm = allPM.find(p => p.id === d.id);
             if (pm) {
                 pm.tgl_kontrak_mulai = d.tgl_kontrak_mulai || '';
                 pm.tgl_kontrak_habis = d.tgl_kontrak_habis || '';
-                pm.surat_kontrak_url = d.surat_kontrak_url || '';
+                if (d.surat_kontrak_url !== undefined && d.surat_kontrak_url !== null) {
+                    pm.surat_kontrak_url = d.surat_kontrak_url;
+                }
             }
 
             // Catat ke Jurnal Layanan
-            await dbSimpanJurnal({
-                id: d.id,
-                nama: pm?.nama || d.nama || 'PM',
-                role: 'Pekerja Sosial',
-                petugas: currentUser.name || 'Pekerja Sosial',
-                kondisi: 'Pembaruan Dokumen & Masa Kontrak Pelayanan PM',
-                intervensi: `Masa Kontrak: ${d.tgl_kontrak_mulai ? formatDateStandard(d.tgl_kontrak_mulai) : '-'} s/d ${d.tgl_kontrak_habis ? formatDateStandard(d.tgl_kontrak_habis) : '-'}`,
-                catatan: d.surat_kontrak_url ? 'Surat Kontrak berhasil diunggah ke berkas-simres/kontrak' : 'Masa kontrak diperbarui tanpa lampiran berkas'
-            });
+            try {
+                const petugasNama = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : 'Pekerja Sosial';
+                const hasKontrakFile = d.surat_kontrak_url || pm?.surat_kontrak_url;
+                await dbSimpanJurnal({
+                    id: d.id,
+                    nama: pm?.nama || d.nama || 'PM',
+                    role: 'Pekerja Sosial',
+                    petugas: petugasNama,
+                    kondisi: 'Pembaruan Dokumen & Masa Kontrak Pelayanan PM',
+                    intervensi: `Masa Kontrak: ${d.tgl_kontrak_mulai ? formatDateStandard(d.tgl_kontrak_mulai) : '-'} s/d ${d.tgl_kontrak_habis ? formatDateStandard(d.tgl_kontrak_habis) : '-'}`,
+                    catatan: hasKontrakFile ? 'Surat Kontrak berhasil diunggah ke berkas-simres/kontrak' : 'Masa kontrak diperbarui tanpa lampiran berkas',
+                    dokumen_url: hasKontrakFile || ''
+                });
+            } catch (jErr) {
+                console.warn("Jurnal kontrak log warning:", jErr);
+            }
 
             return "OK";
         }
@@ -6702,7 +6717,8 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
                         case 'getMasterVokasional': return await dbGetMasterVokasional();
                         case 'simpanVokasional': return await dbSimpanVokasional(data);
                         case 'deleteVokasional': return await dbDeleteVokasional(data.id);
-                        case 'simpanKontrak': return await dbSimpanKontrakPM(data);
+                        case 'simpanKontrak':
+                        case 'simpanKontrakPM': return await dbSimpanKontrakPM(data);
                         case 'updateVokasionalPM':
                         case 'updatePMVokasional': return await dbUpdatePMVokasional(data.id, data.vokasional);
                         case 'alihkanPeksos': return await dbAlihkanPeksos(data);
@@ -11054,26 +11070,29 @@ CREATE INDEX IF NOT EXISTS idx_akun_username ON public.akun(username);
 
             showLoad(true);
             try {
-                let fileUrl = null;
+                const pmExisting = allPM.find(p => p.id === id);
+                let fileUrl = pmExisting?.surat_kontrak_url || null;
                 if (fileInput.files && fileInput.files[0]) {
                     const file = fileInput.files[0];
-                    const client = getSupabase();
-                    if (client) {
-                        const fileExt = file.name.split('.').pop();
-                        const fileName = `kontrak_${id}_${Date.now()}.${fileExt}`;
-                        const filePath = `kontrak/${fileName}`;
+                    if (typeof uploadFileToStorage === 'function' && typeof isSupabaseConfigured === 'function' && isSupabaseConfigured()) {
+                        fileUrl = await uploadFileToStorage(file, 'kontrak');
+                    } else {
+                        const client = getSupabase();
+                        if (client) {
+                            const fileExt = file.name.split('.').pop();
+                            const fileName = `kontrak/${Date.now()}_${id}.${fileExt}`;
+                            const { error: upErr } = await client.storage
+                                .from('berkas-simres')
+                                .upload(fileName, file, { upsert: true });
 
-                        const { error: upErr } = await client.storage
-                            .from('berkas-simres')
-                            .upload(filePath, file, { upsert: true });
+                            if (upErr) throw new Error("Gagal mengunggah berkas kontrak ke Storage: " + upErr.message);
 
-                        if (upErr) throw new Error("Gagal mengunggah berkas kontrak ke Storage: " + upErr.message);
+                            const { data: pubData } = client.storage
+                                .from('berkas-simres')
+                                .getPublicUrl(fileName);
 
-                        const { data: pubData } = client.storage
-                            .from('berkas-simres')
-                            .getPublicUrl(filePath);
-
-                        fileUrl = pubData?.publicUrl || null;
+                            fileUrl = pubData?.publicUrl || null;
+                        }
                     }
                 }
 
